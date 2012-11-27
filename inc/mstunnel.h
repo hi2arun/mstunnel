@@ -45,6 +45,7 @@ typedef struct mst_network {
 } mst_network_t;
 
 typedef enum mst_buf_type {
+    mst_buf32,
     mst_buf64,
     mst_buf128,
     mst_buf256,
@@ -78,13 +79,20 @@ typedef struct mst_buffer {
     mst_buf_t buf_type;
     void *buffer;
     int buf_len;
+    int frags_count; // frags_len = frags_count * buf_len
+    struct mst_buffer *mfrags;
 } mst_buffer_t;
 
+typedef struct mst_buffer_queue {
+    mst_buffer_t *mbuf;
+    mst_buffer_t *mbuf_tail;
+} mst_buffer_queue_t;
 
 typedef struct mst_nw_peer {
     mst_conn_t mst_connection;
     mst_config_t mst_config;
     mst_buffer_t *__mbuf;
+    mst_buffer_queue_t *write_queue;
 } mst_nw_peer_t;
 
 #define mst_fd mst_connection.conn_fd

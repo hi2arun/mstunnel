@@ -14,6 +14,6 @@ void *(*__mst_memalign)(size_t alignment, size_t size);
 
 
 extern int mst_membuf_init(void);
-extern mst_buffer_t *mst_alloc_mbuf(int size, int module);
+extern mst_buffer_t *mst_alloc_mbuf(size_t size, int, int module);
 
 #endif //!__MST_MEMMGMT_H__

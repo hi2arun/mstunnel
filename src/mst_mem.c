@@ -90,6 +90,7 @@ typedef struct mem_slot_details {
 } mem_slot_details_t;
 
 mem_slot_details_t msd[mst_buf_unk] = {
+    {"mst_buf32", 32},
     {"mst_buf64", 64},
     {"mst_buf128", 128},
     {"mst_buf256", 256},
@@ -108,7 +109,7 @@ int mst_add_mbuf_to_inuse(int slot, mst_buffer_t *__mbuf)
     __mbuf->__prev = NULL;
     __mbuf->__next = __mbuf_head->mbuf_list;
     __mbuf_head->mbuf_list = __mbuf;
-    __mbuf_head->mbuf_available++;
+    __mbuf_head->mbuf_available += (__mbuf->frags_count + 1);
     return 0;
 }
 
@@ -129,34 +130,96 @@ chk:
 
     return 0; // i knw.. h ehe
 }
-
-mst_buffer_t *mst_alloc_mbuf(int size, int module)
+//
+// block_type:
+//  0 - fragmented first, linear next
+//  1 - linear first, fragmented next
+mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
 {
     int slot = -1;
+    int frag_size = 0;
+    unsigned int index = 0;
+    int new_slot = -1;
+    int frags_count = 0;
 
-    if (size < D_MEM_BLK_MIN) {
-        slot = 0;
-    }
-    else {
-        slot = mst_get_slot(size/D_MEM_BLK_MIN) - 1;
-        fprintf(stderr, "Requested size: %d, slot: %d\n", size, slot);
-        assert((slot >= mst_buf64) && (slot < mst_buf_unk));
-    }
-
-    if (!mst_mbuf_free_slots[slot].__mbuf_chain.mbuf_available) {
-        fprintf(stderr, "No memory available\n");
+    if (!size) {
         return NULL;
     }
 
+    if (block_type) {
+        frag_size = size;
+    }
+    else {
+        frag_size = size / 2;
+    }
+
+    if (frag_size < msd[0].size_in_bytes) {
+        slot = 0;
+    }
+    else {
+        // msd[0]/size_in_bytes always points to the least mem block size we support
+        // size / least_size points to the slot the blocks to be fetched from.
+        slot = mst_get_slot(frag_size / msd[0].size_in_bytes) - 1;
+        if(frag_size % msd[0].size_in_bytes) {
+            // Handle over-boundary case
+            // Eg. size = 70, least = 64, size/least = 1; size % least = 6, thus slot + 1 = 1 => slot_128
+            // This is a wastage of bytes. Thus ask for properly sized blocks in 2^n, where 4 > n <= 12.
+            slot += 1;
+        }
+        fprintf(stderr, "Requested size: %d, frag_size: %d, slot: %d\n", size, frag_size, slot);
+    }
+    assert((slot >= mst_buf32) && (slot < mst_buf_unk));
+    
+    if (mst_mbuf_free_slots[slot].__mbuf_chain.mbuf_available) {
+        new_slot = slot;
+    }
+    else {
+        for (index = (slot + 1)%mst_buf_unk; index != slot; index = (index + 1)%mst_buf_unk) {
+            if (mst_mbuf_free_slots[index].__mbuf_chain.mbuf_available) {
+                new_slot = index;
+                break;
+            }
+        }
+    }
+    fprintf(stderr, "Requested size: %d, frag_size: %d, slot: %d, new_slot: %d\n", size, frag_size, slot, new_slot);
+
+    if (size < mst_mbuf_free_slots[new_slot].size_per_block) {
+        // TODO: Check with OS for the asked memory
+        fprintf(stderr, "Assert size < size_per_block\n");
+        return NULL;
+    }
+
+    frags_count = size / mst_mbuf_free_slots[new_slot].size_per_block;
+    fprintf(stderr, "Frags count: %d, spb: %d\n", frags_count, mst_mbuf_free_slots[new_slot].size_per_block);
+    if (frags_count > mst_mbuf_free_slots[new_slot].__mbuf_chain.mbuf_available) {
+        // TODO: Check with OS for the asked memory
+        fprintf(stderr, "Assert frags_count > mbuf_available\n");
+        return NULL;
+    }
+    // frags_count should at least be 1
+    assert(frags_count);
+
     {
-        mst_buf_head_t *__mbuf_head = &(mst_mbuf_free_slots[slot].__mbuf_chain);
+        mst_buf_head_t *__mbuf_head = &(mst_mbuf_free_slots[new_slot].__mbuf_chain);
         mst_buffer_t *__mbuf = NULL;
+        mst_buffer_t *mbuf_temp = NULL;
+
         __mbuf = __mbuf_head->mbuf_list;
-        __mbuf_head->mbuf_list = __mbuf->__next;
+
+        __mbuf->frags_count = frags_count - 1;
+        for(index = 0, mbuf_temp = __mbuf; index < (frags_count - 1) && mbuf_temp; index++) {
+            mbuf_temp = mbuf_temp->__next;
+        }
+        if (frags_count) {
+            __mbuf->mfrags = __mbuf->__next;
+        }
+        __mbuf_head->mbuf_list = mbuf_temp->__next;
+        mbuf_temp->__next = NULL;
+        //__mbuf_head->mbuf_list = __mbuf->__next;
         __mbuf_head->mbuf_list->__prev = NULL;
         __mbuf->__next = NULL;
         __mbuf->__prev = NULL;
-        __mbuf_head->mbuf_available--;
+        __mbuf_head->mbuf_available -= frags_count;
         
         mst_add_mbuf_to_inuse(slot, __mbuf);
         return __mbuf;

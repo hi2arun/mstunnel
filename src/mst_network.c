@@ -52,25 +52,60 @@ void mst_do_write(evutil_socket_t fd, short event, void *arg)
     return;
 }
 
+struct iovec *
+mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len) 
+{
+    struct iovec *iov;
+    int index = 0;
+    mst_buffer_t *mbuf_temp;
+
+    iov = (struct iovec*)__mst_malloc(mbuf->frags_count + 1);
+    if (!iov) {
+        return NULL;
+    }
+
+    iov[0].iov_len = mbuf->buf_len;
+    iov[0].iov_base = mbuf->buffer;
+
+    for(mbuf_temp = mbuf->mfrags, index = 1; mbuf_temp; mbuf_temp = mbuf_temp->__next, index++) {
+
+        iov[index].iov_len = mbuf_temp->buf_len;
+        iov[index].iov_base = mbuf_temp->buffer;
+    }
+
+    fprintf(stderr, "Frags_count: %d, index: %d\n", mbuf->frags_count, index);
+
+    assert(index == (mbuf->frags_count + 1));
+
+    *iov_len = index;
+
+    return iov;
+}
+
 #define D_MST_READ_SIZE 2048 // will ask for 2K buffer
 
 void mst_do_read(evutil_socket_t fd, short event, void *arg)
 {
     mst_nw_peer_t *mnp = (mst_nw_peer_t *)arg;
     char ctrlmsg[CMSG_SPACE(sizeof(_sctp_cmsg_data_t))];
-    struct iovec iov;
+    //struct iovec iov;
+    struct iovec *iov = NULL;
     struct msghdr rmsg;
     mst_buffer_t *mbuf = NULL;
     int rlen = 0;
+    int iov_len = 0;
 
     memset(&rmsg, 0, sizeof(rmsg));
-    mbuf = mst_alloc_mbuf(D_MST_READ_SIZE, 0 /*fill module info later*/);
-    assert(mbuf && (mbuf->buf_len == D_MST_READ_SIZE));
+    mbuf = mst_alloc_mbuf(D_MST_READ_SIZE, 0, 0 /*fill module info later*/);
+    assert(mbuf);
 
-    iov.iov_len = D_MST_READ_SIZE;
-    iov.iov_base = mbuf->buffer;
-    rmsg.msg_iov = &iov;
-    rmsg.msg_iovlen = 1;
+    iov = mst_mbuf_to_iov(mbuf, &iov_len);
+
+
+    //iov.iov_len = D_MST_READ_SIZE;
+    //iov.iov_base = mbuf->buffer;
+    rmsg.msg_iov = iov;
+    rmsg.msg_iovlen = iov_len;
     rmsg.msg_control = ctrlmsg;
     rmsg.msg_controllen = sizeof(ctrlmsg);
 
