@@ -19,6 +19,8 @@
 #include <netdb.h>
 #include <net/if.h>
 
+#include "mst_constants.h"
+
 typedef struct mst_globals {
     int alpha;
 
@@ -81,6 +83,7 @@ typedef struct mst_buffer {
     int buf_len;
     int frags_count; // frags_len = frags_count * buf_len
     struct mst_buffer *mfrags;
+    struct mst_buffer *mfrags_tail;
 } mst_buffer_t;
 
 typedef struct mst_buffer_queue {
@@ -103,5 +106,8 @@ typedef struct mst_nw_peer {
 
 #define mst_ec mst_config.ev_cfg
 #define mst_ses mst_config.sctp_ev_subsc
+
+
+extern int mst_process_message(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen);
 
 #endif //!__MST_MSTUNNEL_H__

@@ -5,6 +5,8 @@
 
 #define MST_CLIENT_PORT_BASE 10100
 
+#define D_MST_READ_SIZE 2048 // will ask for 2K buffer
+
 typedef enum {
     MST_MAX_STREAMS = 0xffff,
     // Default Active output streams

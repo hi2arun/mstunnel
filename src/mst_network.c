@@ -52,42 +52,10 @@ void mst_do_write(evutil_socket_t fd, short event, void *arg)
     return;
 }
 
-struct iovec *
-mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len) 
-{
-    struct iovec *iov;
-    int index = 0;
-    mst_buffer_t *mbuf_temp;
-
-    iov = (struct iovec*)__mst_malloc(mbuf->frags_count + 1);
-    if (!iov) {
-        return NULL;
-    }
-
-    iov[0].iov_len = mbuf->buf_len;
-    iov[0].iov_base = mbuf->buffer;
-
-    for(mbuf_temp = mbuf->mfrags, index = 1; mbuf_temp; mbuf_temp = mbuf_temp->__next, index++) {
-
-        iov[index].iov_len = mbuf_temp->buf_len;
-        iov[index].iov_base = mbuf_temp->buffer;
-    }
-
-    fprintf(stderr, "Frags_count: %d, index: %d\n", mbuf->frags_count, index);
-
-    assert(index == (mbuf->frags_count + 1));
-
-    *iov_len = index;
-
-    return iov;
-}
-
-#define D_MST_READ_SIZE 2048 // will ask for 2K buffer
-
 void mst_do_read(evutil_socket_t fd, short event, void *arg)
 {
     mst_nw_peer_t *mnp = (mst_nw_peer_t *)arg;
-    char ctrlmsg[CMSG_SPACE(sizeof(_sctp_cmsg_data_t))];
+    char ctrlmsg[CMSG_SPACE(sizeof(sctp_cmsg_data_t))];
     //struct iovec iov;
     struct iovec *iov = NULL;
     struct msghdr rmsg;
@@ -110,24 +78,24 @@ void mst_do_read(evutil_socket_t fd, short event, void *arg)
     rmsg.msg_controllen = sizeof(ctrlmsg);
 
     rlen = recvmsg(fd, &rmsg, MSG_WAITALL); // change it to NOWAIT later
+    fprintf(stderr, "Received %d bytes. Decode SCTP here\n", rlen);
     if (rlen < 0 && rlen != EAGAIN) {
         event_free(mnp->mst_re);
         event_free(mnp->mst_we);
-        //mst_dealloc_mbuf(mbuf);
+        mst_dealloc_mbuf(mbuf);
         return;
     }
     if (rlen == 0) {
         event_free(mnp->mst_re);
         event_free(mnp->mst_we);
-        //mst_dealloc_mbuf(mbuf);
+        mst_dealloc_mbuf(mbuf);
         return;
     }
 
-    fprintf(stderr, "Decode SCTP here\n");
+    mst_process_message(mnp, &rmsg, rlen);
 
-    event_free(mnp->mst_re);
-    event_free(mnp->mst_we);
-    //mst_dealloc_mbuf(mbuf);
+    event_add(mnp->mst_re, NULL);
+    mst_dealloc_mbuf(mbuf);
 
     return;
 }
