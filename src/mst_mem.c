@@ -150,7 +150,7 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
         frag_size = size;
     }
     else {
-        frag_size = size / 2;
+        frag_size = size / 4;
     }
 
     if (frag_size < msd[0].size_in_bytes) {
