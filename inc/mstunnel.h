@@ -18,6 +18,8 @@
 #include <sys/uio.h>
 #include <netdb.h>
 #include <net/if.h>
+#include <pthread.h>
+#include <glib.h>
 
 #include "mst_constants.h"
 
@@ -31,12 +33,16 @@ typedef struct mst_configuration {
     struct sctp_event_subscribe sctp_ev_subsc;
 } mst_config_t;
 
+struct mst_timer_data;
+
 typedef struct mst_conn {
     evutil_socket_t conn_fd;
     struct event_base *conn_event_base;
     struct event *read_event; // read
     struct event *write_event; // write
     struct sockaddr_in ip_tuple;
+    struct mst_timer_data *timer_data; 
+    pthread_mutex_t conn_lock;
 } mst_conn_t;
 
 typedef struct mst_network {
@@ -72,6 +78,7 @@ typedef struct mst_mem_config {
     char mem_blk_name[D_NAME_SIZ + 1];
     int size_per_block; // in bytes
     struct mst_buf_head __mbuf_chain;
+    pthread_mutex_t mem_lock;
 } mst_mem_config_t;
 
 typedef struct mst_buffer {
@@ -98,10 +105,29 @@ typedef struct mst_nw_peer {
     mst_buffer_queue_t *write_queue;
 } mst_nw_peer_t;
 
+typedef enum mst_timer_priv_type {
+    MST_SYS = 10, // system timer - 1s
+    MST_MNP,
+} mst_timer_priv_type_t;
+
+typedef struct mst_timer_data {
+    int type;
+    struct timeval timeo;
+    struct event *te; // Event to track FD status
+    void *data;
+} mst_timer_data_t;
+
+typedef struct mst_timer {
+    struct event_base *teb;
+    mst_timer_data_t *sys_td; // system timer data 
+} mst_timer_t;
+
 #define mst_fd mst_connection.conn_fd
 #define mst_ceb mst_connection.conn_event_base
 #define mst_re mst_connection.read_event
 #define mst_we mst_connection.write_event
+//#define mst_st mst_connection.status_timer
+#define mst_td mst_connection.timer_data
 #define mst_ipt mst_connection.ip_tuple
 
 #define mst_ec mst_config.ev_cfg
@@ -109,5 +135,6 @@ typedef struct mst_nw_peer {
 
 
 extern int mst_process_message(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen);
+extern int mst_link_status(mst_nw_peer_t *mnp);
 
 #endif //!__MST_MSTUNNEL_H__

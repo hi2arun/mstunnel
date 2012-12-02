@@ -1,3 +1,4 @@
+#include <glib.h>
 #include "mstunnel.h"
 #include "mst_network.h"
 #include "memmgmt.h"
@@ -159,3 +160,41 @@ mst_process_message(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
     return 0;
 }
 
+int
+mst_print_sctp_paddrinfo(struct sctp_paddrinfo *sstat_primary)
+{
+    fprintf(stderr, "Spi assoc id: %d\n", sstat_primary->spinfo_assoc_id);
+    fprintf(stderr, "Spi state: %d\n", sstat_primary->spinfo_state);
+    fprintf(stderr, "Spi cwnd: %d\n", sstat_primary->spinfo_cwnd);
+    fprintf(stderr, "Spi srtt: %d\n", sstat_primary->spinfo_srtt);
+    fprintf(stderr, "Spi rto: %d\n", sstat_primary->spinfo_rto);
+    fprintf(stderr, "Spi mtu: %d\n", sstat_primary->spinfo_mtu);
+
+    return 0;
+}
+
+
+int
+mst_link_status(mst_nw_peer_t *mnp)
+{
+    struct sctp_status link_status;
+    socklen_t optlen = sizeof(struct sctp_status);
+
+    if (getsockopt(mnp->mst_fd, IPPROTO_SCTP, SCTP_STATUS, &link_status, &optlen) < 0) {
+        fprintf(stderr, "Getsockopt failed: %s for fd: %d\n", strerror(errno), mnp->mst_fd);
+        return -1;
+    }
+    fprintf(stderr, "Link status for fd: %d\n", mnp->mst_fd);
+    fprintf(stderr, "Assoc ID: %d\n", link_status.sstat_assoc_id);
+    fprintf(stderr, "State: %d\n", link_status.sstat_state);
+    fprintf(stderr, "Rwnd: %d\n", link_status.sstat_rwnd);
+    fprintf(stderr, "Unackdata: %d\n", link_status.sstat_unackdata);
+    fprintf(stderr, "Pend data: %d\n", link_status.sstat_penddata);
+    fprintf(stderr, "InStrms: %d\n", link_status.sstat_instrms);
+    fprintf(stderr, "OutStrms: %d\n", link_status.sstat_outstrms);
+    fprintf(stderr, "FragPoint: %d\n", link_status.sstat_fragmentation_point);
+
+    mst_print_sctp_paddrinfo(&link_status.sstat_primary);
+
+    return 0;
+}

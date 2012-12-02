@@ -26,6 +26,7 @@ int mst_add_mbuf_to_inuse(int slot, mst_buffer_t *__mbuf)
 {
     mst_buf_head_t *__mbuf_head = &(mst_mbuf_inuse_slots[slot].__mbuf_chain);
 
+    pthread_mutex_lock(&mst_mbuf_inuse_slots[slot].mem_lock);
     __mbuf->__prev = NULL;
     __mbuf->__next = __mbuf_head->mbuf_list;
     if (__mbuf_head->mbuf_list) {
@@ -33,6 +34,7 @@ int mst_add_mbuf_to_inuse(int slot, mst_buffer_t *__mbuf)
     }
     __mbuf_head->mbuf_list = __mbuf;
     __mbuf_head->mbuf_available += (__mbuf->frags_count + 1);
+    pthread_mutex_unlock(&mst_mbuf_inuse_slots[slot].mem_lock);
     return 0;
 }
 
@@ -217,6 +219,8 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
         mst_buffer_t *__mbuf = NULL;
         mst_buffer_t *mbuf_temp = NULL;
 
+        pthread_mutex_lock(&mst_mbuf_free_slots[new_slot].mem_lock);
+
         __mbuf = __mbuf_head->mbuf_list;
 
         __mbuf->frags_count = frags_count - 1;
@@ -234,6 +238,8 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
         __mbuf->__next = NULL;
         __mbuf->__prev = NULL;
         __mbuf_head->mbuf_available -= frags_count;
+        
+        pthread_mutex_unlock(&mst_mbuf_free_slots[new_slot].mem_lock);
         
         mst_add_mbuf_to_inuse(slot, __mbuf);
         return __mbuf;
@@ -263,6 +269,9 @@ mst_membuf_init()
         
         mst_mbuf_free_slots[index].__mbuf_chain.mbuf_list = NULL;
         mst_mbuf_inuse_slots[index].__mbuf_chain.mbuf_list = NULL;
+        
+        pthread_mutex_init(&mst_mbuf_free_slots[index].mem_lock, NULL);
+        pthread_mutex_init(&mst_mbuf_inuse_slots[index].mem_lock, NULL);
 
         for (cntr = 0; cntr < mst_mbuf_free_slots[index].__mbuf_chain.mbuf_count; cntr++) {
             mst_buffer_t *node = (mst_buffer_t *)__mst_malloc(sizeof(mst_buffer_t));

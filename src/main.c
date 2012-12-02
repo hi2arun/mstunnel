@@ -10,6 +10,7 @@
 #include "mstunnel.h"
 #include "mst_network.h"
 #include "memmgmt.h"
+#include "mst_timer.h"
 
 //mst_events_t mst_events;
 //mst_conn_t mst_conn[D_MST_MAX_CONN];
@@ -83,7 +84,10 @@ int main(int argc, char **argv)
     mst_log_init();
     mst_mm_init();
     mst_levent_init();
-    mst_setup_network(mode, ipaddr, port);
+    mst_timer_init();
+    if (mst_setup_network(mode, ipaddr, port)) {
+        exit(EXIT_FAILURE);
+    }
     mst_loop_network(mode);
 
     return 0;
