@@ -12,8 +12,7 @@
 #include "memmgmt.h"
 #include "mst_timer.h"
 
-//mst_events_t mst_events;
-//mst_conn_t mst_conn[D_MST_MAX_CONN];
+mst_opts_t mst_global_opts; 
 
 extern mst_network_t mst_network_base;
 
@@ -55,6 +54,7 @@ int main(int argc, char **argv)
     int opt;
     int mode = 0; // 0 - client, 1 - server
     char *ipaddr = NULL;
+    int rv = -1;
     unsigned short port = 0;
 
     memset(&mst_network_base, 0, sizeof(mst_network_t));
@@ -78,6 +78,19 @@ int main(int argc, char **argv)
 
     if (!ipaddr) {
         printhelp(argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    mst_global_opts.ifconfig = "/sbin/ifconfig ";
+    mst_global_opts.route = "/sbin/route ";
+    mst_global_opts.iproute = "/sbin/ip route ";
+    mst_global_opts.iprule = "/sbin/ip rule ";
+
+    //mst_global_opts.mst_config;
+    //mst_global_opts.mst_tuple;
+    rv = pthread_rwlock_init(&mst_global_opts.rwlock, NULL);
+    if (rv < 0) {
+        fprintf(stderr, "Global opts rwlock failed: %s\n", strerror(errno));
         exit(EXIT_FAILURE);
     }
 

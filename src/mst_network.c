@@ -95,8 +95,6 @@ void mst_do_read(evutil_socket_t fd, short event, void *arg)
     event_add(mnp->mst_re, NULL);
     mst_dealloc_mbuf(mbuf);
 
-    sleep(1);
-
     return;
 }
 
@@ -115,6 +113,17 @@ void mst_do_accept(evutil_socket_t fd, short event, void *arg)
 
     if ((cfd > 0) && (cfd <= D_MAX_PEER_CNT)) {
         fprintf(stderr, "Accepted conn[%d] from '%s:%hu'\n", cfd, inet_ntoa(client.sin_addr), client.sin_port);
+
+        if(!mnp[cfd].mst_connection) {
+            mnp[cfd].mst_connection = (mst_conn_t *) __mst_malloc(sizeof(mst_conn_t));
+            if (!mnp[cfd].mst_connection) {
+                fprintf(stderr, "Malloc failed for mst_connection\n");
+                return;
+            }
+        }
+        else {
+            memset(mnp[cfd].mst_connection, 0, sizeof(mst_conn_t));
+        }
 
         mnp[cfd].mst_fd = cfd;
         mnp[cfd].mst_ceb = mnb.mst_ceb;
@@ -175,6 +184,17 @@ int mst_setup_network(int mode, char *ipaddr, unsigned short port)
     int sk;
 
     mnb.mode = mode;
+
+    if(!mnb.mst_connection) {
+        mnb.mst_connection = (mst_conn_t *) __mst_malloc(sizeof(mst_conn_t));
+        if (!mnb.mst_connection) {
+            fprintf(stderr, "Malloc failed for mst_connection\n");
+            return -1;
+        }
+    }
+    else {
+        memset(mnb.mst_connection, 0, sizeof(mst_conn_t));
+    }
 
     sk = mst_create_socket();
     if (sk < 0) {
@@ -240,6 +260,7 @@ int mst_loop_network(int mode)
         return -1;
     }
 
+
     evutil_make_socket_nonblocking(mnb.mst_fd);
 
     if (mode) {
@@ -261,6 +282,20 @@ int mst_loop_network(int mode)
             fprintf(stderr, "Failed to alloc memory: %s\n", strerror(errno));
             return -1;
         }
+
+        memset(mnp, 0, sizeof(mst_nw_peer_t));
+
+        if(!mnp->mst_connection) {
+            mnp->mst_connection = (mst_conn_t *) __mst_malloc(sizeof(mst_conn_t));
+            if (!mnp->mst_connection) {
+                fprintf(stderr, "Malloc failed for mst_connection\n");
+                return -1;
+            }
+        }
+        else {
+            memset(mnp->mst_connection, 0, sizeof(mst_conn_t));
+        }
+
         mnp->mst_fd = mnb.mst_fd;
         mnp->mst_ses = mnb.mst_ses;
         mnp->mst_ipt = mnb.mst_ipt;
