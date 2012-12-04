@@ -4,49 +4,49 @@
 #include "memmgmt.h"
 
 int
-mst_process_ac(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
-mst_process_pac(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_pac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
-mst_process_sf(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_sf(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
-mst_process_re(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_re(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
-mst_process_se(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_se(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
-mst_process_pde(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_pde(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
-mst_process_ai(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_ai(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
-mst_process_auth_ind(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_auth_ind(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
@@ -54,7 +54,7 @@ mst_process_auth_ind(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
 
 
 int
-mst_process_notification(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen) 
+mst_process_notification(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen) 
 {
     union sctp_notification *snp = NULL;
     struct iovec *msg_iov = NULL;
@@ -66,28 +66,28 @@ mst_process_notification(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
 
     switch(snp->sn_header.sn_type) {
         case SCTP_ASSOC_CHANGE:
-            mst_process_ac(mnp, rmsg, rlen);
+            mst_process_ac(pmnp, rmsg, rlen);
             break;
         case SCTP_PEER_ADDR_CHANGE:
-            mst_process_pac(mnp, rmsg, rlen);
+            mst_process_pac(pmnp, rmsg, rlen);
             break;
         case SCTP_SEND_FAILED:
-            mst_process_sf(mnp, rmsg, rlen);
+            mst_process_sf(pmnp, rmsg, rlen);
             break;
         case SCTP_REMOTE_ERROR:
-            mst_process_re(mnp, rmsg, rlen);
+            mst_process_re(pmnp, rmsg, rlen);
             break;
         case SCTP_SHUTDOWN_EVENT:
-            mst_process_se(mnp, rmsg, rlen);
+            mst_process_se(pmnp, rmsg, rlen);
             break;
         case SCTP_PARTIAL_DELIVERY_EVENT:
-            mst_process_pde(mnp, rmsg, rlen);
+            mst_process_pde(pmnp, rmsg, rlen);
             break;
         case SCTP_ADAPTATION_INDICATION:
-            mst_process_ai(mnp, rmsg, rlen);
+            mst_process_ai(pmnp, rmsg, rlen);
             break;
         case SCTP_AUTHENTICATION_INDICATION:
-            mst_process_auth_ind(mnp, rmsg, rlen);
+            mst_process_auth_ind(pmnp, rmsg, rlen);
             break;
         default:
             fprintf(stderr, "Unknown notification type: %0x\n", snp->sn_header.sn_type);
@@ -97,7 +97,7 @@ mst_process_notification(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
 }
 
 int
-mst_process_data(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_data(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
@@ -134,7 +134,7 @@ mst_dump_ctrlmsg(int type, sctp_cmsg_data_t *rdata)
 }
 
 int
-mst_process_message(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
+mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     struct cmsghdr *scmsg = NULL;
     sctp_cmsg_data_t *rdata = NULL;
@@ -146,10 +146,10 @@ mst_process_message(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen)
     // Check if it is notification message or data
 
     if (MSG_NOTIFICATION & rmsg->msg_flags) {
-        mst_process_notification(mnp, rmsg, rlen);
+        mst_process_notification(pmnp, rmsg, rlen);
     }
     else {
-        mst_process_data(mnp, rmsg, rlen);
+        mst_process_data(pmnp, rmsg, rlen);
     }
 
     for(scmsg = CMSG_FIRSTHDR(rmsg); scmsg != NULL; scmsg = CMSG_NXTHDR(rmsg, scmsg)) {
@@ -175,16 +175,16 @@ mst_print_sctp_paddrinfo(struct sctp_paddrinfo *sstat_primary)
 
 
 int
-mst_link_status(mst_nw_peer_t *mnp)
+mst_link_status(mst_nw_peer_t *pmnp)
 {
     struct sctp_status link_status;
     socklen_t optlen = sizeof(struct sctp_status);
 
-    if (getsockopt(mnp->mst_fd, IPPROTO_SCTP, SCTP_STATUS, &link_status, &optlen) < 0) {
-        fprintf(stderr, "Getsockopt failed: %s for fd: %d\n", strerror(errno), mnp->mst_fd);
+    if (getsockopt(pmnp->mst_fd, IPPROTO_SCTP, SCTP_STATUS, &link_status, &optlen) < 0) {
+        fprintf(stderr, "Getsockopt failed: %s for fd: %d\n", strerror(errno), pmnp->mst_fd);
         return -1;
     }
-    fprintf(stderr, "Link status for fd: %d\n", mnp->mst_fd);
+    fprintf(stderr, "Link status for fd: %d\n", pmnp->mst_fd);
     fprintf(stderr, "Assoc ID: %d\n", link_status.sstat_assoc_id);
     fprintf(stderr, "State: %d\n", link_status.sstat_state);
     fprintf(stderr, "Rwnd: %d\n", link_status.sstat_rwnd);

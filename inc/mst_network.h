@@ -9,7 +9,7 @@ typedef union {
 #endif
 
 
-extern int mst_setup_network(int mode, char *ipaddr, unsigned short port);
-extern int mst_loop_network(int mode);
+extern int mst_setup_network(void);
+extern int mst_loop_network(void);
 
 #endif //!__MST_NETWORK_H__

@@ -69,7 +69,7 @@ mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len)
     int index = 0;
     mst_buffer_t *mbuf_temp;
 
-    iov = (struct iovec*)__mst_malloc(mbuf->frags_count + 1);
+    iov = (struct iovec*)__mst_malloc(sizeof(struct iovec) * (mbuf->frags_count + 1));
     if (!iov) {
         return NULL;
     }

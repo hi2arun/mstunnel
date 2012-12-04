@@ -14,8 +14,6 @@
 
 mst_opts_t mst_global_opts; 
 
-extern mst_network_t mst_network_base;
-
 void mst_log_event_cb(int severity, const char *msg);
 
 void mst_log_event_cb(int severity, const char *msg)
@@ -49,25 +47,90 @@ void printhelp(char *prgname)
     return;
 }
 
+inline mst_csi_t *
+mst_get_tuple_config(void)
+{
+    return mst_global_opts.mst_tuple;
+}
+
+#ifdef __DEV_TEST__
+int mst_init_test_tuple(mst_csi_t **mt)
+{
+    mst_csi_t *pmt = NULL;
+    *mt = (mst_csi_t *)__mst_malloc(sizeof(mst_csi_t));
+    if (!(*mt)) {
+        fprintf(stderr, "%d: Malloc failed\n", __LINE__);
+        return -1;
+    }
+
+    pmt = *mt;
+
+    pmt->__next = NULL;
+    pmt->client = (mst_node_info_t *)__mst_malloc(sizeof(mst_node_info_t));
+    if (!pmt->client) {
+        fprintf(stderr, "%d: Malloc failed\n", __LINE__);
+        return -1;
+    }
+    pmt->server = (mst_node_info_t *)__mst_malloc(sizeof(mst_node_info_t));
+    if (!pmt->server) {
+        fprintf(stderr, "%d: Malloc failed\n", __LINE__);
+        return -1;
+    }
+    pmt->client->host_name = NULL; // letz go by IP address
+    pmt->client->host_addr = "10.10.10.1";
+    pmt->client->port = 0; // leave it to OS for port assign
+    pmt->client->policy_mark = 0; // Disable policy mark
+
+    pmt->server->host_name = NULL; // letz go by IP address
+    pmt->server->host_addr = "10.10.10.1";
+    pmt->server->port = 40400; 
+    pmt->server->policy_mark = 0; // Disable policy mark
+
+    return 0;
+}
+#endif //__DEV_TEST__
+
+inline mst_config_t *
+mst_get_mst_config(void)
+{
+    return &mst_global_opts.mst_config;
+}
+
+int mst_config_init(void)
+{
+    int rv = -1;
+    mst_global_opts.ifconfig = "/sbin/ifconfig ";
+    mst_global_opts.route = "/sbin/route ";
+    mst_global_opts.iproute = "/sbin/ip route ";
+    mst_global_opts.iprule = "/sbin/ip rule ";
+
+    mst_global_opts.mst_ses.sctp_data_io_event = 1;
+    mst_global_opts.mst_ses.sctp_association_event = 1;
+    mst_global_opts.mst_ses.sctp_shutdown_event = 1;
+
+    mst_global_opts.mst_tuple_cnt = 1;
+    mst_global_opts.mst_sk_backlog = D_SRV_BACKLOG; 
+
+#ifdef __DEV_TEST__
+    mst_init_test_tuple(&mst_global_opts.mst_tuple);
+#endif // __DEV_TEST__
+    
+    rv = pthread_rwlock_init(&mst_global_opts.rwlock, NULL);
+
+    assert(rv >= 0);
+
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     int opt;
-    int mode = 0; // 0 - client, 1 - server
-    char *ipaddr = NULL;
-    int rv = -1;
-    unsigned short port = 0;
 
-    memset(&mst_network_base, 0, sizeof(mst_network_t));
-    while((opt = getopt(argc, argv, "sP:D:h")) != EOF) {
+    while((opt = getopt(argc, argv, "sh")) != EOF) {
         switch(opt) {
             case 's':
-                mst_network_base.mode = mode = 1;
-                break;
-            case 'P':
-                port = (unsigned short)atoi(optarg);
-                break;
-            case 'D':
-                ipaddr = strdup(optarg);
+                fprintf(stderr, "Server mode\n");
+                mst_global_opts.mst_config.mst_mode = 1;
                 break;
             case 'h':
             default:
@@ -75,33 +138,17 @@ int main(int argc, char **argv)
                 exit(EXIT_FAILURE);
         }
     }
+    mst_mm_init();
 
-    if (!ipaddr) {
-        printhelp(argv[0]);
-        exit(EXIT_FAILURE);
-    }
-
-    mst_global_opts.ifconfig = "/sbin/ifconfig ";
-    mst_global_opts.route = "/sbin/route ";
-    mst_global_opts.iproute = "/sbin/ip route ";
-    mst_global_opts.iprule = "/sbin/ip rule ";
-
-    //mst_global_opts.mst_config;
-    //mst_global_opts.mst_tuple;
-    rv = pthread_rwlock_init(&mst_global_opts.rwlock, NULL);
-    if (rv < 0) {
-        fprintf(stderr, "Global opts rwlock failed: %s\n", strerror(errno));
-        exit(EXIT_FAILURE);
-    }
+    mst_config_init();
 
     mst_log_init();
-    mst_mm_init();
     mst_levent_init();
     mst_timer_init();
-    if (mst_setup_network(mode, ipaddr, port)) {
+    if (mst_setup_network()) {
         exit(EXIT_FAILURE);
     }
-    mst_loop_network(mode);
+    mst_loop_network();
 
     return 0;
 }

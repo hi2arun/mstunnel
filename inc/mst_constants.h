@@ -7,6 +7,8 @@
 
 #define D_MST_READ_SIZE 2048 // will ask for 2K buffer
 
+#define D_SRV_BACKLOG 100
+
 typedef enum {
     MST_MAX_STREAMS = 0xffff,
     // Default Active output streams

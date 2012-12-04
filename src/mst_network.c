@@ -3,47 +3,60 @@
 #include "mst_network.h"
 #include "mst_timer.h"
 
-mst_network_t mst_network_base;
-mst_nw_peer_t *mnp;
+mst_event_base_t meb;
+mst_nw_peer_t *mnp; // For peers
+mst_nw_peer_t *mnp_l; // For local socket inits 
 
-#define mnb mst_network_base
+#define D_MAX_LISTEN_CNT 2
+#define D_MAX_CONNECT_CNT 2
 #define D_MAX_PEER_CNT 1024
 
 int mst_create_socket(void)
 {
     int rv = -1;
-    mnb.mst_fd = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
+    int fd = -1;
+    mst_config_t *mc = NULL;
+    fd = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
 
-    if (mnb.mst_fd < 0) {
+    if (fd < 0) {
         fprintf(stderr, "Failed to create socket: %s\n", strerror(errno));
-        return -1;
     }
 
-    mnb.mst_ses.sctp_data_io_event = 1;
-    mnb.mst_ses.sctp_association_event = 1;
-    mnb.mst_ses.sctp_shutdown_event = 1;
+    assert(fd > 0);
 
-    rv = setsockopt(mnb.mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&mnb.mst_ses, sizeof(mnb.mst_ses));
+    // This call won't return NULL
+    mc = mst_get_mst_config();
+
+    rv = setsockopt(fd, SOL_SCTP, SCTP_EVENTS, (char *)&mc->sctp_ev_subsc, sizeof(mc->sctp_ev_subsc));
     if (rv < 0) {
         fprintf(stderr, "SCTP_EVENTS subscribe failure: %s\n", strerror (errno));
     }
+    // Make the socket non-blocking
+    evutil_make_socket_nonblocking(fd);
 
-    return mnb.mst_fd;
+    return fd;
 }
 
-int mst_bind_socket(char *ipaddr, unsigned short port)
+int mst_bind_socket(mst_nw_peer_t *pmnp, int mode)
 {
     int rv = -1;
-    mnb.mst_ipt.sin_family = AF_INET;
-    mnb.mst_ipt.sin_addr.s_addr = inet_addr(ipaddr);
-    mnb.mst_ipt.sin_port = htons(port);
+    mst_csi_t *mc;
+    mst_node_info_t *mni;
+    struct sockaddr_in skaddr;
 
-    rv = bind(mnb.mst_fd, (struct sockaddr *)&mnb.mst_ipt, sizeof(mnb.mst_ipt));
+    memset(&skaddr, 0, sizeof(skaddr));
 
-    if (rv < 0) {
-        fprintf(stderr, "Bind error: %s\n", strerror(errno));
-        return -1;
-    }
+    mc = pmnp->mst_mt;
+    
+    mni = (mode)?mc->server:mc->client;
+    
+    skaddr.sin_family = AF_INET;
+    skaddr.sin_addr.s_addr = inet_addr(mni->host_addr);
+    skaddr.sin_port = htons(mni->port);
+
+    rv = bind(pmnp->mst_fd, (struct sockaddr *)&skaddr, sizeof(skaddr));
+
+    assert(!rv);
 
     return 0;
 }
@@ -55,7 +68,7 @@ void mst_do_write(evutil_socket_t fd, short event, void *arg)
 
 void mst_do_read(evutil_socket_t fd, short event, void *arg)
 {
-    mst_nw_peer_t *mnp = (mst_nw_peer_t *)arg;
+    mst_nw_peer_t *pmnp = (mst_nw_peer_t *)arg;
     char ctrlmsg[CMSG_SPACE(sizeof(sctp_cmsg_data_t))];
     struct iovec *iov = NULL;
     struct msghdr rmsg;
@@ -77,22 +90,24 @@ void mst_do_read(evutil_socket_t fd, short event, void *arg)
     rlen = recvmsg(fd, &rmsg, MSG_WAITALL); // change it to NOWAIT later
     fprintf(stderr, "Received %d bytes. Decode SCTP here\n", rlen);
     if (rlen < 0 && rlen != EAGAIN) {
-        event_free(mnp->mst_re);
-        event_free(mnp->mst_we);
-        event_free(mnp->mst_td->te);
+        close(fd);
+        event_free(pmnp->mst_re);
+        event_free(pmnp->mst_we);
+        event_free(pmnp->mst_td->te);
         mst_dealloc_mbuf(mbuf);
         return;
     }
     if (rlen == 0) {
-        event_free(mnp->mst_re);
-        event_free(mnp->mst_we);
-        event_free(mnp->mst_td->te);
+        close(fd);
+        event_free(pmnp->mst_re);
+        event_free(pmnp->mst_we);
+        event_free(pmnp->mst_td->te);
         mst_dealloc_mbuf(mbuf);
         return;
     }
-    mst_process_message(mnp, &rmsg, rlen);
+    //mst_process_message(pmnp, &rmsg, rlen);
 
-    event_add(mnp->mst_re, NULL);
+    event_add(pmnp->mst_re, NULL);
     mst_dealloc_mbuf(mbuf);
 
     return;
@@ -104,8 +119,9 @@ void mst_do_accept(evutil_socket_t fd, short event, void *arg)
     struct sockaddr_in client;
     socklen_t sk_len = sizeof(client);
     evutil_socket_t cfd;
+    mst_nw_peer_t *pmnp = (mst_nw_peer_t *)arg;
 
-    assert(mnb.mst_fd == fd);
+    assert(pmnp->mst_fd == fd);
     memset(&client, 0, sk_len);
 
     fprintf(stderr, "Got a call\n");
@@ -116,38 +132,32 @@ void mst_do_accept(evutil_socket_t fd, short event, void *arg)
 
         if(!mnp[cfd].mst_connection) {
             mnp[cfd].mst_connection = (mst_conn_t *) __mst_malloc(sizeof(mst_conn_t));
-            if (!mnp[cfd].mst_connection) {
-                fprintf(stderr, "Malloc failed for mst_connection\n");
-                return;
-            }
+            assert(mnp[cfd].mst_connection);
         }
         else {
             memset(mnp[cfd].mst_connection, 0, sizeof(mst_conn_t));
         }
 
         mnp[cfd].mst_fd = cfd;
-        mnp[cfd].mst_ceb = mnb.mst_ceb;
-        mnp[cfd].mst_re = event_new(mnb.mst_ceb, cfd, EV_READ, mst_do_read, (void *)&mnp[cfd]);
-        mnp[cfd].mst_we = event_new(mnb.mst_ceb, cfd, EV_WRITE, mst_do_write, (void *)&mnp[cfd]);
+        mnp[cfd].mst_re = event_new(meb.ceb, cfd, EV_READ, mst_do_read, (void *)&mnp[cfd]);
+        mnp[cfd].mst_we = event_new(meb.ceb, cfd, EV_WRITE, mst_do_write, (void *)&mnp[cfd]);
 
         if (!mnp[cfd].mst_td) {
             mnp[cfd].mst_td = (mst_timer_data_t *)__mst_malloc(sizeof(mst_timer_data_t));
+            assert(mnp[cfd].mst_td);
         }
         mnp[cfd].mst_td->type = MST_MNP;
         mnp[cfd].mst_td->timeo.tv_sec = 1;
         mnp[cfd].mst_td->timeo.tv_usec = 0;
-        mnp[cfd].mst_td->te = evtimer_new(mtb.teb, mst_timer, mnp[cfd].mst_td);
+        mnp[cfd].mst_td->te = evtimer_new(meb.Teb, mst_timer, mnp[cfd].mst_td);
         mnp[cfd].mst_td->data = &mnp[cfd];
 
-        mnp[cfd].mst_ses.sctp_data_io_event = 1;
-        mnp[cfd].mst_ses.sctp_association_event = 1;
-        mnp[cfd].mst_ses.sctp_shutdown_event = 1;
+        rv = setsockopt(mnp[cfd].mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&pmnp->pmst_ses, sizeof(pmnp->pmst_ses));
 
-        rv = setsockopt(mnp[cfd].mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&mnp[cfd].mst_ses, sizeof(mnp[cfd].mst_ses));
+        fprintf(stderr, "SSO: RV: %d\n", rv);
 
-        if (rv < 0) {
-            fprintf(stderr, "Setsockopt failed @[%d]:%s\n", __LINE__, strerror(errno));
-        }
+        assert(rv >= 0);
+
         evutil_make_socket_nonblocking(cfd);
         event_add(mnp[cfd].mst_re, NULL);
         evtimer_add(mnp[cfd].mst_td->te, &mnp[cfd].mst_td->timeo);
@@ -159,155 +169,137 @@ void mst_do_accept(evutil_socket_t fd, short event, void *arg)
     return;
 }
 
-int mst_listen_socket(int backlog)
+int mst_listen_socket(void)
 {
     int rv = -1;
-    rv = listen(mnb.mst_fd, backlog);
+    int index = 0;
+    
+    for(index = 0; index < mst_global_opts.mst_tuple_cnt; index++) {
+        rv = listen(mnp_l[index].mst_fd, mst_global_opts.mst_sk_backlog);
+        assert(!rv);
 
-    if (rv < 0) {
-        fprintf(stderr, "Listen call failed: %s\n", strerror(errno));
-        return -1;
+        mnp_l[index].mst_re = event_new(meb.ceb, mnp_l[index].mst_fd, EV_READ|EV_PERSIST, mst_do_accept, (void *)&mnp_l[index]);
+        event_add(mnp_l[index].mst_re, NULL);
     }
-
-    mnb.mst_re = event_new(mnb.mst_ceb, mnb.mst_fd, EV_READ|EV_PERSIST, mst_do_accept, (void *)mnb.mst_ceb);
-
-    event_add(mnb.mst_re, NULL);
 
     return 0;
 }
 
-#define D_SRV_BACKLOG 100
-
-int mst_setup_network(int mode, char *ipaddr, unsigned short port)
+int mst_setup_network(void)
 {
-    int rv = -1;
-    int sk;
+    mst_csi_t *mt = NULL;
+    int index = 0;
 
-    mnb.mode = mode;
+    mt = mst_get_tuple_config();
 
-    if(!mnb.mst_connection) {
-        mnb.mst_connection = (mst_conn_t *) __mst_malloc(sizeof(mst_conn_t));
-        if (!mnb.mst_connection) {
-            fprintf(stderr, "Malloc failed for mst_connection\n");
-            return -1;
-        }
-    }
-    else {
-        memset(mnb.mst_connection, 0, sizeof(mst_conn_t));
+    mnp_l = (mst_nw_peer_t *)__mst_malloc(sizeof(mst_nw_peer_t) * mst_global_opts.mst_tuple_cnt);
+    
+    assert(mnp_l);
+
+    memset(mnp_l, 0, sizeof(mst_nw_peer_t) * mst_global_opts.mst_tuple_cnt);
+
+    for(index = 0; index < mst_global_opts.mst_tuple_cnt; index++) {
+        mnp_l[index].mst_connection = (mst_conn_t *)__mst_malloc(sizeof(mst_conn_t));
+        assert(mnp_l[index].mst_connection);
+        memset(mnp_l[index].mst_connection, 0, sizeof(mst_conn_t));
+        mnp_l[index].mst_fd = mst_create_socket();
+        mnp_l[index].mst_mt = &mt[index];
+
+        mnp_l[index].mst_config = &mst_global_opts.mst_config;
+        
+        mnp_l[index].mst_tunnel = (mst_tunn_t *)__mst_malloc(sizeof(mst_tunn_t));
+        assert(mnp_l[index].mst_tunnel);
+        memset(mnp_l[index].mst_tunnel, 0, sizeof(mst_tunn_t));
+        
+        assert(!mst_bind_socket(&mnp_l[index], mst_global_opts.mst_config.mst_mode));
     }
 
-    sk = mst_create_socket();
-    if (sk < 0) {
-        return rv;
-    }
-
-    if (mode) {
-        rv = mst_bind_socket(ipaddr, port);
-    }
-    else {
-        rv = mst_bind_socket(ipaddr, (port - 1));
-    }
-
-    return rv;
+    return 0;
 }
 
 int
-mst_connect_socket(mst_nw_peer_t *mnp)
+mst_connect_socket(void)
 {
     int rv = -1;
+    int index = 0;
+    struct sockaddr_in skaddr;
+    mst_csi_t *mc;
+    mst_node_info_t *mni;
+    mst_nw_peer_t *pmnp = NULL;
 
-    rv = connect(mnp->mst_fd, (struct sockaddr *)&mnp->mst_ipt, sizeof(mnp->mst_ipt));
 
-    if ((rv < 0) && (EINPROGRESS != errno)) {
-        fprintf(stderr, "Connect error: %d:%s\n", errno, strerror(errno));
-        return -1;
+    for(index = 0; index < mst_global_opts.mst_tuple_cnt; index++) {
+        mc = mnp_l[index].mst_mt;
+        mni = mc->server;
+        
+        memset(&skaddr, 0, sizeof(skaddr));
+
+        skaddr.sin_family = AF_INET;
+        skaddr.sin_addr.s_addr = inet_addr(mni->host_addr);
+        skaddr.sin_port = htons(mni->port);
+
+        rv = connect(mnp_l[index].mst_fd, (struct sockaddr *)&skaddr, sizeof(skaddr));
+
+        if ((rv < 0) && (EINPROGRESS != errno)) {
+            fprintf(stderr, "Connect error: %d:%s\n", errno, strerror(errno));
+            continue;
+        }
+
+        pmnp = &mnp_l[index];
+        pmnp->mst_re = event_new(meb.ceb, pmnp->mst_fd, EV_READ, mst_do_read, (void *)pmnp);
+        pmnp->mst_we = event_new(meb.ceb, pmnp->mst_fd, EV_WRITE, mst_do_write, (void *)pmnp);
+
+        //TODO: Create tun interface and setup tunn_events
+
+        pmnp->mst_td = (mst_timer_data_t *)__mst_malloc(sizeof(mst_timer_data_t));
+        assert(pmnp->mst_td);
+        pmnp->mst_td->type = MST_MNP;
+        pmnp->mst_td->timeo.tv_sec = 1;
+        pmnp->mst_td->timeo.tv_usec = 0;
+        pmnp->mst_td->te = evtimer_new(meb.Teb, mst_timer, pmnp->mst_td);
+        pmnp->mst_td->data = pmnp;
+
+        rv = setsockopt(pmnp->mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&pmnp->pmst_ses, sizeof(pmnp->pmst_ses));
+
+        assert(rv >= 0);
+
+        evutil_make_socket_nonblocking(pmnp->mst_fd);
+        event_add(pmnp->mst_re, NULL);
+        evtimer_add(pmnp->mst_td->te, &pmnp->mst_td->timeo);
     }
-    //There is only one event base for all connections
-    mnp->mst_ceb = mnb.mst_ceb;
-    mnp->mst_re = event_new(mnp->mst_ceb, mnp->mst_fd, EV_READ, mst_do_read, (void *)mnp);
-    mnp->mst_we = event_new(mnp->mst_ceb, mnp->mst_fd, EV_WRITE, mst_do_write, (void *)mnp);
-    
-    mnp->mst_td = (mst_timer_data_t *)__mst_malloc(sizeof(mst_timer_data_t));
-    mnp->mst_td->type = MST_MNP;
-    mnp->mst_td->timeo.tv_sec = 1;
-    mnp->mst_td->timeo.tv_usec = 0;
-    mnp->mst_td->te = evtimer_new(mtb.teb, mst_timer, mnp->mst_td);
-    mnp->mst_td->data = mnp;
-
-    mnp->mst_ses.sctp_data_io_event = 1;
-    mnp->mst_ses.sctp_association_event = 1;
-    mnp->mst_ses.sctp_shutdown_event = 1;
-
-    rv = setsockopt(mnp->mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&mnp->mst_ses, sizeof(mnp->mst_ses));
-
-    if (rv < 0) {
-        fprintf(stderr, "Setsockopt failed @[%d]:%s\n", __LINE__, strerror(errno));
-    }
-    evutil_make_socket_nonblocking(mnp->mst_fd);
-    event_add(mnp->mst_re, NULL);
-    evtimer_add(mnp->mst_td->te, &mnp->mst_td->timeo);
 
     return 0;
 }
 
-int mst_loop_network(int mode)
+int mst_loop_network(void)
 {
     int rv = -1;
     // Create event base here for all connections - root
-    mnb.mst_ceb = event_base_new ();
-    if (!mnb.mst_ceb) {
-        fprintf(stderr, "Failed to create event base: %s\n", strerror(errno));
-        return -1;
-    }
+    meb.ceb = event_base_new();
+    assert(meb.ceb);
+
+    // Create event base for tunn side
+    meb.teb = event_base_new();
+    assert(meb.teb);
 
 
-    evutil_make_socket_nonblocking(mnb.mst_fd);
-
-    if (mode) {
+    if (mst_global_opts.mst_config.mst_mode) {
         mnp = (mst_nw_peer_t *) __mst_malloc(D_MAX_PEER_CNT * sizeof(mst_nw_peer_t));
 
-        if (!mnp) {
-            fprintf(stderr, "Failed to alloc memory: %s\n", strerror(errno));
-            return -1;
-        }
+        assert(mnp);
 
         memset(mnp, 0, D_MAX_PEER_CNT * sizeof(mst_nw_peer_t));
-
-        mst_listen_socket(D_SRV_BACKLOG);
+        mst_listen_socket();
     }
     else {
-        // Allocate for the first client now...
-        mnp = (mst_nw_peer_t *) __mst_malloc(sizeof(mst_nw_peer_t));
-        if (!mnp) {
-            fprintf(stderr, "Failed to alloc memory: %s\n", strerror(errno));
-            return -1;
-        }
-
-        memset(mnp, 0, sizeof(mst_nw_peer_t));
-
-        if(!mnp->mst_connection) {
-            mnp->mst_connection = (mst_conn_t *) __mst_malloc(sizeof(mst_conn_t));
-            if (!mnp->mst_connection) {
-                fprintf(stderr, "Malloc failed for mst_connection\n");
-                return -1;
-            }
-        }
-        else {
-            memset(mnp->mst_connection, 0, sizeof(mst_conn_t));
-        }
-
-        mnp->mst_fd = mnb.mst_fd;
-        mnp->mst_ses = mnb.mst_ses;
-        mnp->mst_ipt = mnb.mst_ipt;
-        mnp->mst_ipt.sin_port += htons(1);
-        mst_connect_socket(mnp);
+        mst_connect_socket();
     }
 
-    rv = event_base_dispatch(mnb.mst_ceb);
+    rv = event_base_dispatch(meb.ceb);
 
     fprintf(stderr, "RV: %d\n", rv);
 
-    //mst_cleanup_socket(sk);
+    //mst_cleanup_network();
 
     return 0;
 }

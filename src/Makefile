@@ -10,6 +10,7 @@ SOURCES=$(wildcard *.c)
 OBJ_FILES= $(patsubst %.c,${BUILDDIR}/%.o,${SOURCES}) 
 
 MST_FLAGS=-D_EVENT_HAVE_PTHREADS
+MST_FLAGS+=-D__DEV_TEST__
 
 TARGET=${ROOTDIR}/bin/mstunnel
 CFLAGS=-g -O2 -Wall ${MST_FLAGS}

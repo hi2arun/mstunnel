@@ -56,6 +56,8 @@ typedef struct mst_opts {
 
     mst_config_t mst_config;
     mst_csi_t *mst_tuple;
+    int mst_tuple_cnt;
+    int mst_sk_backlog;
     pthread_rwlock_t rwlock;
 } mst_opts_t;
 
@@ -73,19 +75,19 @@ typedef struct mst_stat {
 
 typedef struct mst_tunn {
     evutil_socket_t tunn_fd;
-    struct event_base *tunn_event_base;
+    //struct event_base *tunn_event_base;
     struct event *tunn_read_event; // read
     struct event *tunn_write_event; // write
     struct mst_timer_data *timer_data;
     mst_stat_t mst_tunn_stat;
     mst_buffer_t *__mbuf;
-    mst_buffer_queue_t *write_queue;
+    mst_buffer_queue_t write_queue;
     pthread_mutex_t conn_lock;
 } mst_tunn_t;
 
 typedef struct mst_conn {
     evutil_socket_t conn_fd;
-    struct event_base *conn_event_base;
+    //struct event_base *conn_event_base;
     struct event *read_event; // read
     struct event *write_event; // write
     struct sockaddr_in ip_tuple;
@@ -93,21 +95,23 @@ typedef struct mst_conn {
     struct mst_timer_data *timer_data; 
     mst_stat_t mst_conn_stat;
     mst_buffer_t *__mbuf;
-    mst_buffer_queue_t *write_queue;
+    mst_buffer_queue_t write_queue;
     pthread_mutex_t conn_lock;
 } mst_conn_t;
 
-typedef struct mst_network {
-    char *if_name;
-    int mode;
-    mst_conn_t *mst_connection;
-    mst_config_t mst_config;
-} mst_network_t;
+typedef struct mst_event_base {
+    // connection_event_base
+    struct event_base *ceb;
+    // tunnel_event_base
+    struct event_base *teb;
+    // Timer_event_base
+    struct event_base *Teb;
+} mst_event_base_t;
 
 typedef struct mst_nw_peer {
     mst_conn_t *mst_connection;
     mst_tunn_t *mst_tunnel;
-    mst_config_t mst_config;
+    mst_config_t *mst_config;
 } mst_nw_peer_t;
 
 typedef enum mst_timer_priv_type {
@@ -152,9 +156,16 @@ typedef struct mst_timer {
 
 #define mst_ec mst_config.ev_cfg
 #define mst_ses mst_config.sctp_ev_subsc
+#define pmst_ses mst_config->sctp_ev_subsc
 
+#define pmst_mt mst_config->mst_tuple
+
+extern mst_opts_t mst_global_opts;
 
 extern int mst_process_message(mst_nw_peer_t *mnp, struct msghdr *rmsg, int rlen);
 extern int mst_link_status(mst_nw_peer_t *mnp);
+
+extern inline mst_csi_t * mst_get_tuple_config(void);
+extern inline mst_config_t * mst_get_mst_config(void);
 
 #endif //!__MST_MSTUNNEL_H__
