@@ -2,14 +2,12 @@
 #include "memmgmt.h"
 #include "mst_network.h"
 #include "mst_timer.h"
+#include "mst_tun.h"
 
 mst_event_base_t meb;
 mst_nw_peer_t *mnp; // For peers
 mst_nw_peer_t *mnp_l; // For local socket inits 
 
-#define D_MAX_LISTEN_CNT 2
-#define D_MAX_CONNECT_CNT 2
-#define D_MAX_PEER_CNT 1024
 
 int mst_create_socket(void)
 {
@@ -61,9 +59,88 @@ int mst_bind_socket(mst_nw_peer_t *pmnp, int mode)
     return 0;
 }
 
+void mst_tun_do_write(evutil_socket_t fd, short event, void *arg)
+{
+    fprintf(stderr, "%s(): __ENTRY__\n", __func__);
+    return;
+}
+
+void mst_tun_do_read(evutil_socket_t fd, short event, void *arg)
+{
+    mst_nw_peer_t *pmnp = (mst_nw_peer_t *)arg;
+    struct iovec *iov = NULL;
+    mst_buffer_t *mbuf = NULL;
+    int rlen = 0;
+    int iov_len = 0;
+
+    fprintf(stderr, "%s(): __ENTRY__\n", __func__);
+    mbuf = mst_alloc_mbuf(D_MST_READ_SIZE, 0, 0 /*fill module info later*/);
+    assert(mbuf);
+
+    iov = mst_mbuf_to_iov(mbuf, &iov_len);
+
+    //rlen = recvmsg(fd, &rmsg, MSG_WAITALL); // change it to NOWAIT later
+    rlen = readv(fd, iov, iov_len); // change it to NOWAIT later
+    fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
+    if (rlen < 0 && rlen != EAGAIN) {
+        fprintf(stderr, "Read error: %s\n", strerror(errno));
+        mst_cleanup_mnp(pmnp);
+        mst_dealloc_mbuf(mbuf);
+        __mst_free(iov);
+        return;
+    }
+    if (rlen == 0) {
+        mst_cleanup_mnp(pmnp);
+        mst_dealloc_mbuf(mbuf);
+        __mst_free(iov);
+        return;
+    }
+
+    event_add(pmnp->mst_tre, NULL);
+    mst_dealloc_mbuf(mbuf);
+
+    return;
+}
+
 void mst_do_write(evutil_socket_t fd, short event, void *arg)
 {
+    fprintf(stderr, "%s(): __ENTRY__\n", __func__);
     return;
+}
+
+int mst_destroy_mbuf_q(mst_buffer_queue_t *mbuf_q)
+{
+    fprintf(stderr, "%s(): __ENTRY__\n", __func__);
+    return 0;
+}
+
+int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
+{
+    if (pmnp->mst_connection) {
+        close(pmnp->mst_fd);
+        event_free(pmnp->mst_re);
+        event_free(pmnp->mst_we);
+        event_free(pmnp->mst_td->te);
+        __mst_free(pmnp->mst_td);
+        mst_destroy_mbuf_q(&pmnp->mst_wq);
+        pmnp->mst_fd = -1;
+    }
+    if (pmnp->mst_tunnel) {
+        close(pmnp->mst_tfd);
+        event_free(pmnp->mst_tre);
+        event_free(pmnp->mst_twe);
+        if (pmnp->mst_ttd) {
+            event_free(pmnp->mst_ttd->te);
+            __mst_free(pmnp->mst_ttd);
+        }
+        mst_destroy_mbuf_q(&pmnp->mst_twq);
+        pmnp->mst_tfd = -1;
+        mst_tun_dev_name_rel();
+    }
+    pmnp->mst_config = NULL;
+
+    return 0;
+
 }
 
 void mst_do_read(evutil_socket_t fd, short event, void *arg)
@@ -90,27 +167,53 @@ void mst_do_read(evutil_socket_t fd, short event, void *arg)
     rlen = recvmsg(fd, &rmsg, MSG_WAITALL); // change it to NOWAIT later
     fprintf(stderr, "Received %d bytes. Decode SCTP here\n", rlen);
     if (rlen < 0 && rlen != EAGAIN) {
-        close(fd);
-        event_free(pmnp->mst_re);
-        event_free(pmnp->mst_we);
-        event_free(pmnp->mst_td->te);
+        mst_cleanup_mnp(pmnp);
         mst_dealloc_mbuf(mbuf);
+        __mst_free(iov);
         return;
     }
     if (rlen == 0) {
-        close(fd);
-        event_free(pmnp->mst_re);
-        event_free(pmnp->mst_we);
-        event_free(pmnp->mst_td->te);
+        mst_cleanup_mnp(pmnp);
         mst_dealloc_mbuf(mbuf);
+        __mst_free(iov);
         return;
     }
-    //mst_process_message(pmnp, &rmsg, rlen);
+    mst_process_message(pmnp, &rmsg, rlen);
 
     event_add(pmnp->mst_re, NULL);
     mst_dealloc_mbuf(mbuf);
 
     return;
+}
+
+int mst_setup_tunnel(mst_nw_peer_t *pmnp)
+{
+    char dev_name[IFNAMSIZ + 1] = {0};
+    int rv = 0;
+
+    rv = mst_tun_dev_name(dev_name, IFNAMSIZ);
+    fprintf(stderr, "New dev name: %s\n", dev_name);
+
+    if(!pmnp->mst_tunnel) {
+        pmnp->mst_tunnel = (mst_tunn_t *) __mst_malloc(sizeof(mst_tunn_t));
+        assert(pmnp->mst_tunnel);
+    }
+    else {
+        memset(pmnp->mst_tunnel, 0, sizeof(mst_tunn_t));
+    }
+    pmnp->mst_tfd = mst_tun_open(dev_name);
+    assert(pmnp->mst_tfd > 0);
+    pmnp->mst_tre = event_new(meb.teb, pmnp->mst_tfd, EV_READ, mst_tun_do_read, (void *)pmnp);
+    pmnp->mst_twe = event_new(meb.teb, pmnp->mst_tfd, EV_WRITE, mst_tun_do_write, (void *)pmnp);
+
+    pthread_mutex_lock(&meb.teb_lock);
+    pthread_cond_signal(&meb.teb_cond);
+    pthread_mutex_unlock(&meb.teb_lock);
+    
+    evutil_make_socket_nonblocking(pmnp->mst_tfd);
+    event_add(pmnp->mst_tre, NULL);
+
+    return rv;
 }
 
 void mst_do_accept(evutil_socket_t fd, short event, void *arg)
@@ -277,11 +380,6 @@ int mst_loop_network(void)
     // Create event base here for all connections - root
     meb.ceb = event_base_new();
     assert(meb.ceb);
-
-    // Create event base for tunn side
-    meb.teb = event_base_new();
-    assert(meb.teb);
-
 
     if (mst_global_opts.mst_config.mst_mode) {
         mnp = (mst_nw_peer_t *) __mst_malloc(D_MAX_PEER_CNT * sizeof(mst_nw_peer_t));

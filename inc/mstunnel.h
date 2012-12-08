@@ -20,6 +20,9 @@
 #include <net/if.h>
 #include <pthread.h>
 #include <glib.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/if_tun.h>
 
 #include "mst_mbuf.h"
 #include "mst_constants.h"
@@ -82,7 +85,8 @@ typedef struct mst_tunn {
     mst_stat_t mst_tunn_stat;
     mst_buffer_t *__mbuf;
     mst_buffer_queue_t write_queue;
-    pthread_mutex_t conn_lock;
+    int ref_cnt;
+    pthread_mutex_t tunn_lock;
 } mst_tunn_t;
 
 typedef struct mst_conn {
@@ -96,6 +100,7 @@ typedef struct mst_conn {
     mst_stat_t mst_conn_stat;
     mst_buffer_t *__mbuf;
     mst_buffer_queue_t write_queue;
+    int ref_cnt;
     pthread_mutex_t conn_lock;
 } mst_conn_t;
 
@@ -104,6 +109,8 @@ typedef struct mst_event_base {
     struct event_base *ceb;
     // tunnel_event_base
     struct event_base *teb;
+    pthread_mutex_t teb_lock;
+    pthread_cond_t teb_cond;
     // Timer_event_base
     struct event_base *Teb;
 } mst_event_base_t;
@@ -142,6 +149,7 @@ typedef struct mst_timer {
 #define mst_cbuf mst_connection->__mbuf
 #define mst_wq mst_connection->write_queue
 #define mst_cl mst_connection->conn_lock
+#define mst_rc mst_connection->ref_cnt
 
 #define mst_tfd mst_tunnel->tunn_fd
 #define mst_teb mst_tunnel->tunn_event_base
@@ -151,7 +159,8 @@ typedef struct mst_timer {
 #define mst_tcs mst_tunnel->mst_conn_stat
 #define mst_tbuf mst_tunnel->__mbuf
 #define mst_twq mst_tunnel->write_queue
-#define mst_tcl mst_tunnel->conn_lock
+#define mst_tcl mst_tunnel->tunn_lock
+#define mst_trc mst_tunnel->ref_cnt
 
 
 #define mst_ec mst_config.ev_cfg

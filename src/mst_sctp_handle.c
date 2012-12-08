@@ -6,7 +6,39 @@
 int
 mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
+    struct iovec *msg_iov = NULL;
+    union sctp_notification *snp = NULL;
+    struct sctp_assoc_change *sac;
+
     fprintf(stderr, "ENTRY: %s()\n", __func__);
+    msg_iov = rmsg->msg_iov;
+    // Notification should be in the first vector
+    snp = (union sctp_notification *)msg_iov->iov_base;
+    sac = &snp->sn_assoc_change;
+
+    switch(sac->sac_state) {
+        // Comm UP
+        case 0:
+            fprintf(stderr, "COMM_UP - Setting up tunnel\n");
+            mst_setup_tunnel(pmnp);
+            break;
+        // Comm RESTART
+        case 2:
+            fprintf(stderr, "COMM_RESTART\n");
+            break;
+        // Shutdown COMPLETE
+        case 3:
+            fprintf(stderr, "SHUTDOWN_COMPLETE\n");
+            break;
+        // Comm DOWN
+        case 1:
+            // Cant Start ASSOC
+        case 4:
+        default:
+            fprintf(stderr, "Cleanup mnp: assoc_change to %d\n", sac->sac_state);
+            mst_cleanup_mnp(pmnp);
+    }
+    
     return 0;
 }
 int
@@ -163,11 +195,11 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 int
 mst_print_sctp_paddrinfo(struct sctp_paddrinfo *sstat_primary)
 {
-    fprintf(stderr, "Spi assoc id: %d\n", sstat_primary->spinfo_assoc_id);
-    fprintf(stderr, "Spi state: %d\n", sstat_primary->spinfo_state);
-    fprintf(stderr, "Spi cwnd: %d\n", sstat_primary->spinfo_cwnd);
-    fprintf(stderr, "Spi srtt: %d\n", sstat_primary->spinfo_srtt);
-    fprintf(stderr, "Spi rto: %d\n", sstat_primary->spinfo_rto);
+    fprintf(stderr, "Spi assoc id: %d, ", sstat_primary->spinfo_assoc_id);
+    fprintf(stderr, "Spi state: %d, ", sstat_primary->spinfo_state);
+    fprintf(stderr, "Spi cwnd: %d, ", sstat_primary->spinfo_cwnd);
+    fprintf(stderr, "Spi srtt: %d, ", sstat_primary->spinfo_srtt);
+    fprintf(stderr, "Spi rto: %d, ", sstat_primary->spinfo_rto);
     fprintf(stderr, "Spi mtu: %d\n", sstat_primary->spinfo_mtu);
 
     return 0;
@@ -184,15 +216,15 @@ mst_link_status(mst_nw_peer_t *pmnp)
         fprintf(stderr, "Getsockopt failed: %s for fd: %d\n", strerror(errno), pmnp->mst_fd);
         return -1;
     }
-    fprintf(stderr, "Link status for fd: %d\n", pmnp->mst_fd);
-    fprintf(stderr, "Assoc ID: %d\n", link_status.sstat_assoc_id);
-    fprintf(stderr, "State: %d\n", link_status.sstat_state);
-    fprintf(stderr, "Rwnd: %d\n", link_status.sstat_rwnd);
-    fprintf(stderr, "Unackdata: %d\n", link_status.sstat_unackdata);
-    fprintf(stderr, "Pend data: %d\n", link_status.sstat_penddata);
-    fprintf(stderr, "InStrms: %d\n", link_status.sstat_instrms);
-    fprintf(stderr, "OutStrms: %d\n", link_status.sstat_outstrms);
-    fprintf(stderr, "FragPoint: %d\n", link_status.sstat_fragmentation_point);
+    fprintf(stderr, "Link status for fd: %d, ", pmnp->mst_fd);
+    fprintf(stderr, "Assoc ID: %d, ", link_status.sstat_assoc_id);
+    fprintf(stderr, "State: %d, ", link_status.sstat_state);
+    fprintf(stderr, "Rwnd: %d, ", link_status.sstat_rwnd);
+    fprintf(stderr, "Unackdata: %d, ", link_status.sstat_unackdata);
+    fprintf(stderr, "Pend data: %d, ", link_status.sstat_penddata);
+    fprintf(stderr, "InStrms: %d, ", link_status.sstat_instrms);
+    fprintf(stderr, "OutStrms: %d, ", link_status.sstat_outstrms);
+    fprintf(stderr, "FragPoint: %d, ", link_status.sstat_fragmentation_point);
 
     mst_print_sctp_paddrinfo(&link_status.sstat_primary);
 
