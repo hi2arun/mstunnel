@@ -13,5 +13,7 @@ extern int mst_setup_network(void);
 extern int mst_loop_network(void);
 extern int mst_setup_tunnel(mst_nw_peer_t *pmnp);
 extern int mst_cleanup_mnp(mst_nw_peer_t *pmnp);
+extern int mst_do_tun_read(mst_nw_peer_t *pmnp);
+extern int mst_do_nw_read(mst_nw_peer_t *pmnp);
 
 #endif //!__MST_NETWORK_H__

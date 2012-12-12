@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/if_tun.h>
+#include <sys/queue.h>
 
 #include "mst_mbuf.h"
 #include "mst_constants.h"
@@ -83,8 +84,9 @@ typedef struct mst_tunn {
     struct event *tunn_write_event; // write
     struct mst_timer_data *timer_data;
     mst_stat_t mst_tunn_stat;
-    mst_buffer_t *__mbuf;
-    mst_buffer_queue_t write_queue;
+    mst_buffer_t *mbuf;
+    struct iovec *iov;
+    //mst_buffer_queue_t write_queue;
     int ref_cnt;
     pthread_mutex_t tunn_lock;
 } mst_tunn_t;
@@ -98,8 +100,9 @@ typedef struct mst_conn {
     mst_csi_t *mst_tuple;
     struct mst_timer_data *timer_data; 
     mst_stat_t mst_conn_stat;
-    mst_buffer_t *__mbuf;
-    mst_buffer_queue_t write_queue;
+    mst_buffer_t *mbuf;
+    struct iovec *iov;
+    //mst_buffer_queue_t write_queue;
     int ref_cnt;
     pthread_mutex_t conn_lock;
 } mst_conn_t;
@@ -107,10 +110,14 @@ typedef struct mst_conn {
 typedef struct mst_event_base {
     // connection_event_base
     struct event_base *ceb;
+    pthread_mutex_t ceb_lock;
+    pthread_cond_t ceb_cond;
+    
     // tunnel_event_base
     struct event_base *teb;
     pthread_mutex_t teb_lock;
     pthread_cond_t teb_cond;
+    
     // Timer_event_base
     struct event_base *Teb;
 } mst_event_base_t;
@@ -119,7 +126,20 @@ typedef struct mst_nw_peer {
     mst_conn_t *mst_connection;
     mst_tunn_t *mst_tunnel;
     mst_config_t *mst_config;
+    pthread_mutex_t ref_lock;
+    int ref_cnt;
 } mst_nw_peer_t;
+
+typedef enum mst_nw_q_type {
+    MST_SCTP_Q = 10,
+    MST_TUN_Q,
+} mst_nw_q_type_t;
+
+typedef struct mst_nw_q {
+    mst_nw_q_type_t q_type;
+    mst_nw_peer_t *pmnp; // this is mnp
+    TAILQ_ENTRY(mst_nw_q) q_field;
+} mst_nw_q_t;
 
 typedef enum mst_timer_priv_type {
     MST_SYS = 10, // system timer - 1s
@@ -146,7 +166,8 @@ typedef struct mst_timer {
 #define mst_ipt mst_connection->ip_tuple
 #define mst_mt mst_connection->mst_tuple
 #define mst_cs mst_connection->mst_conn_stat
-#define mst_cbuf mst_connection->__mbuf
+#define mst_cbuf mst_connection->mbuf
+#define mst_ciov mst_connection->iov
 #define mst_wq mst_connection->write_queue
 #define mst_cl mst_connection->conn_lock
 #define mst_rc mst_connection->ref_cnt
@@ -156,8 +177,9 @@ typedef struct mst_timer {
 #define mst_tre mst_tunnel->tunn_read_event
 #define mst_twe mst_tunnel->tunn_write_event
 #define mst_ttd mst_tunnel->timer_data
-#define mst_tcs mst_tunnel->mst_conn_stat
-#define mst_tbuf mst_tunnel->__mbuf
+#define mst_tcs mst_tunnel->mst_tunn_stat
+#define mst_tbuf mst_tunnel->mbuf
+#define mst_tiov mst_tunnel->iov
 #define mst_twq mst_tunnel->write_queue
 #define mst_tcl mst_tunnel->tunn_lock
 #define mst_trc mst_tunnel->ref_cnt

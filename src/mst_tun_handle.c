@@ -90,10 +90,13 @@ int mst_tun_open(char *dev_name)
     struct ifreq ifr;
     int tun_fd;
     int rv = -1;
+    int dummy_fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+    assert(dummy_fd > 0);
 
     memset(&ifr, 0, sizeof(ifr));
 
-    ifr.ifr_flags = IFF_TUN|IFF_NO_PI|IFF_UP;
+    ifr.ifr_flags = IFF_TUN|IFF_NO_PI;
     //ifr.ifr_flags = IFF_TAP|IFF_NO_PI;
     strncpy(ifr.ifr_name, dev_name, sizeof(ifr.ifr_name));
 
@@ -102,8 +105,14 @@ int mst_tun_open(char *dev_name)
     assert(tun_fd > 0);
 
     rv = ioctl(tun_fd, TUNSETIFF, (void *)&ifr);
-
     assert(rv >= 0);
+    
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, dev_name, sizeof(ifr.ifr_name));
+    ifr.ifr_flags = IFF_UP;
+    rv = ioctl(dummy_fd, SIOCSIFFLAGS, (void *)&ifr);
+    assert(rv >= 0);
+    close(dummy_fd);
 
     return tun_fd;
 }

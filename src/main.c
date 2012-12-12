@@ -12,6 +12,7 @@
 #include "memmgmt.h"
 #include "mst_timer.h"
 #include "mst_tun.h"
+#include "mst_nw_queue.h"
 
 mst_opts_t mst_global_opts; 
 
@@ -147,6 +148,7 @@ int main(int argc, char **argv)
     mst_levent_init();
     mst_timer_init();
     mst_tun_init();
+    mst_init_nw_queue();
     if (mst_setup_network()) {
         exit(EXIT_FAILURE);
     }
