@@ -28,20 +28,41 @@
 #include "mst_mbuf.h"
 #include "mst_constants.h"
 
+#define M_MNP_REF_UP(x) \
+    {\
+        pthread_mutex_lock(&(x)->ref_lock); \
+        (x)->ref_cnt++; \
+        pthread_mutex_unlock(&(x)->ref_lock); \
+    }
+
+#define M_MNP_REF_DOWN(x) \
+    {\
+        pthread_mutex_lock(&(x)->ref_lock); \
+        if ((x)->ref_cnt) { \
+            (x)->ref_cnt--; \
+        }\
+        pthread_mutex_unlock(&(x)->ref_lock); \
+    }
+
+#define M_MNP_REF_DOWN_AND_FREE(x) \
+    {\
+        pthread_mutex_lock(&(x)->ref_lock); \
+        if ((x)->ref_cnt) { \
+            (x)->ref_cnt--; \
+        }\
+        if (0 == (x)->ref_cnt) { \
+            mst_cleanup_mnp(x); \
+        }\
+        pthread_mutex_unlock(&(x)->ref_lock); \
+    }
+
 typedef struct mst_node_info {
     char *host_name;
     char *host_addr;
+    unsigned host_ipv4;
     int port;
     int policy_mark; // applicable for clients 
 } mst_node_info_t;
-
-// client-server info
-typedef struct mst_clisvr_info {
-    // multiple Interfaces/links to one/multiple servers
-    struct mst_clisvr_info *__next;
-    mst_node_info_t *client;
-    mst_node_info_t *server;
-} mst_csi_t;
 
 typedef struct mst_configuration {
     struct event_config *ev_cfg;
@@ -49,6 +70,27 @@ typedef struct mst_configuration {
     int mst_mode; // 0 - client, 1 - server
     int log_level;
 } mst_config_t;
+
+typedef struct mst_nw_parms {
+    unsigned short num_ostreams; // number of out streams
+    unsigned short max_instreams; // Max instreams that we support
+    float link_nice; // ~ 1/(avg SRTT) of the link
+    int xmit_factor; // default 10
+    int xmit_max_pkts; // link_nice * xmit_factor
+    int xmit_curr_cnt; // Current cnt transmitted
+    int xmit_curr_stream; // Current stream #
+    //TODO: Extend this to have all conn/tunn specific config and placeholders
+} mst_nw_parms_t;
+
+
+// client-server info
+typedef struct mst_clisvr_info {
+    // multiple Interfaces/links to one/multiple servers
+    struct mst_clisvr_info *__next;
+    mst_node_info_t *client;
+    mst_node_info_t *server;
+    mst_nw_parms_t nw_parms;
+} mst_csi_t;
 
 typedef struct mst_opts {
     char *config_db; // points to config file

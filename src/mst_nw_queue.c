@@ -13,7 +13,9 @@ mst_nw_q_t *mst_nw_dequeue_tail(void)
     mst_nw_q_t *qelm;
     pthread_mutex_lock(&mst_q_lock);
     qelm = TAILQ_LAST(&mnq_head, mst_nw_queue);
-    TAILQ_REMOVE(&mnq_head, qelm, q_field);
+    if (qelm) {
+        TAILQ_REMOVE(&mnq_head, qelm, q_field);
+    }
     pthread_mutex_unlock(&mst_q_lock);
 
     return qelm;
@@ -46,6 +48,7 @@ mst_wait:
     pthread_cond_wait(&mst_q_cond, &mst_q_lock);
     pthread_mutex_unlock(&mst_q_lock);
 
+deq_again:
     qelm = mst_nw_dequeue_tail();
 
     if (!qelm) {
@@ -65,7 +68,7 @@ mst_wait:
     }
 
     __mst_free(qelm);
-    goto mst_wait;
+    goto deq_again;
 
 }
 

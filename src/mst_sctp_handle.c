@@ -210,12 +210,18 @@ int
 mst_link_status(mst_nw_peer_t *pmnp)
 {
     struct sctp_status link_status;
+    mst_csi_t *mst_tuple;
     socklen_t optlen = sizeof(struct sctp_status);
+
+    M_MNP_REF_UP(pmnp);
 
     if (getsockopt(pmnp->mst_fd, IPPROTO_SCTP, SCTP_STATUS, &link_status, &optlen) < 0) {
         fprintf(stderr, "Getsockopt failed: %s for fd: %d\n", strerror(errno), pmnp->mst_fd);
+        M_MNP_REF_DOWN_AND_FREE(pmnp);
         return -1;
     }
+
+    mst_tuple = pmnp->mst_mt;
     fprintf(stderr, "Link status for fd: %d, ", pmnp->mst_fd);
     fprintf(stderr, "Assoc ID: %d, ", link_status.sstat_assoc_id);
     fprintf(stderr, "State: %d, ", link_status.sstat_state);
@@ -227,6 +233,15 @@ mst_link_status(mst_nw_peer_t *pmnp)
     fprintf(stderr, "FragPoint: %d, ", link_status.sstat_fragmentation_point);
 
     mst_print_sctp_paddrinfo(&link_status.sstat_primary);
+
+    mst_tuple->nw_parms.link_nice = (link_status.sstat_primary.spinfo_srtt)?(1/link_status.sstat_primary.spinfo_srtt):1.0;
+    mst_tuple->nw_parms.xmit_max_pkts = (int)(mst_tuple->nw_parms.link_nice * mst_tuple->nw_parms.xmit_factor);
+
+    mst_tuple->nw_parms.xmit_curr_stream = (mst_tuple->nw_parms.xmit_curr_stream + 1) % mst_tuple->nw_parms.num_ostreams;
+
+    fprintf(stderr, "Link nice: %f, xmit_max_pkts: %d\n", mst_tuple->nw_parms.link_nice, mst_tuple->nw_parms.xmit_max_pkts);
+    
+    M_MNP_REF_DOWN_AND_FREE(pmnp);
 
     return 0;
 }

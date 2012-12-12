@@ -88,6 +88,14 @@ int mst_init_test_tuple(mst_csi_t **mt)
     pmt->server->port = 40400; 
     pmt->server->policy_mark = 0; // Disable policy mark
 
+    pmt->nw_parms.num_ostreams = 10;
+    pmt->nw_parms.max_instreams = 10;
+    pmt->nw_parms.link_nice = 1.0;
+    pmt->nw_parms.xmit_factor = 10;
+    pmt->nw_parms.xmit_max_pkts = (int)(pmt->nw_parms.link_nice * pmt->nw_parms.xmit_factor);
+    pmt->nw_parms.xmit_curr_cnt = 0;
+    pmt->nw_parms.xmit_curr_stream = 0;
+
     return 0;
 }
 #endif //__DEV_TEST__

@@ -9,34 +9,6 @@ mst_event_base_t meb;
 mst_nw_peer_t *mnp; // For peers
 mst_nw_peer_t *mnp_l; // For local socket inits 
 
-#define M_MNP_REF_UP(x) \
-    {\
-        pthread_mutex_lock(&(x)->ref_lock); \
-        (x)->ref_cnt++; \
-        pthread_mutex_unlock(&(x)->ref_lock); \
-    }
-
-#define M_MNP_REF_DOWN(x) \
-    {\
-        pthread_mutex_lock(&(x)->ref_lock); \
-        if ((x)->ref_cnt) { \
-            (x)->ref_cnt--; \
-        }\
-        pthread_mutex_unlock(&(x)->ref_lock); \
-    }
-
-#define M_MNP_REF_DOWN_AND_FREE(x) \
-    {\
-        pthread_mutex_lock(&(x)->ref_lock); \
-        if ((x)->ref_cnt) { \
-            (x)->ref_cnt--; \
-        }\
-        if (0 == (x)->ref_cnt) { \
-            mst_cleanup_mnp(x); \
-        }\
-        pthread_mutex_unlock(&(x)->ref_lock); \
-    }
-
 inline void mst_wakeup_tun_base(void)
 {
     pthread_mutex_lock(&meb.teb_lock);
@@ -132,29 +104,72 @@ int mst_do_tun_read(mst_nw_peer_t *pmnp)
 
     iov = mst_mbuf_to_iov(mbuf, &iov_len);
 
-    //rlen = recvmsg(fd, &rmsg, MSG_WAITALL); // change it to NOWAIT later
-    //rlen = readv(fd, iov, iov_len); // change it to NOWAIT later
+    pmnp->mst_tbuf = mbuf;
+    pmnp->mst_tiov = iov;
+    
     rlen = readv(pmtun->tunn_fd, iov, iov_len); // change it to NOWAIT later
     fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
     if (rlen < 0 && rlen != EAGAIN) {
         fprintf(stderr, "Read error: %s\n", strerror(errno));
         mst_cleanup_mnp(pmnp);
-        mst_dealloc_mbuf(mbuf);
-        __mst_free(iov);
         return -1;
     }
     if (rlen == 0) {
         fprintf(stderr, "TUNN cleanup - 2\n");
         mst_cleanup_mnp(pmnp);
-        mst_dealloc_mbuf(mbuf);
-        __mst_free(iov);
         return -1;
     }
-    fprintf(stderr, "Wake up TUN base\n");
-    mst_wakeup_tun_base();
+
+    if (rlen > 0) {
+        mst_do_conn_write(pmnp, rlen);
+    }
 
     event_add(pmnp->mst_tre, NULL);
     mst_dealloc_mbuf(mbuf);
+    __mst_free(iov);
+    pmnp->mst_tbuf = NULL;
+    pmnp->mst_tiov = NULL;
+    
+    fprintf(stderr, "Wake up TUN base\n");
+    mst_wakeup_tun_base();
+
+    return 0;
+}
+
+int mst_do_conn_write(mst_nw_peer_t *pmnp, int rlen)
+{
+    int rv = -1;
+    struct msghdr omsg;
+    char ctrlmsg[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
+    struct cmsghdr *cmsg;
+    struct sctp_sndrcvinfo *sinfo;
+    mst_csi_t *mt = pmnp->mst_mt;
+    
+    fprintf(stderr, "%s(): __ENTRY__\n", __func__);
+    memset(&omsg, 0, sizeof(omsg));
+
+    omsg.msg_iov = pmnp->mst_tiov;
+    omsg.msg_iovlen = pmnp->mst_tbuf->frags_count + 1;
+    omsg.msg_control = ctrlmsg;
+    omsg.msg_controllen = sizeof(ctrlmsg);
+    omsg.msg_flags = 0;
+
+    cmsg = CMSG_FIRSTHDR(&omsg);
+    cmsg->cmsg_level = IPPROTO_SCTP;
+    cmsg->cmsg_type = SCTP_SNDRCV;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(struct sctp_sndrcvinfo));
+
+    omsg.msg_controllen = cmsg->cmsg_len;
+    sinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
+    memset(sinfo, 0, sizeof(struct sctp_sndrcvinfo));
+
+    sinfo->sinfo_ppid = rand();
+    sinfo->sinfo_stream = mt->nw_parms.xmit_curr_stream;
+    sinfo->sinfo_flags = 0;
+
+    rv = sendmsg(pmnp->mst_fd, &omsg, MSG_WAITALL);
+
+    fprintf(stderr, "SendMSG: %d --- on stream ID: %d, (%s)\n", rv, sinfo->sinfo_stream, strerror(errno));
 
     return 0;
 }
@@ -181,6 +196,15 @@ int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
         __mst_free(pmnp->mst_td);
         mst_dealloc_mbuf(pmnp->mst_cbuf);
         __mst_free(pmnp->mst_ciov);
+        if(pmnp->mst_mt) {
+            if(pmnp->mst_mt->client) {
+                __mst_free(pmnp->mst_mt->client);
+            }
+            if(pmnp->mst_mt->server) {
+                __mst_free(pmnp->mst_mt->server);
+            }
+            __mst_free(pmnp->mst_mt);
+        }
         //mst_destroy_mbuf_q(&pmnp->mst_wq);
         pmnp->mst_fd = -1;
     }
@@ -191,6 +215,12 @@ int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
         if (pmnp->mst_ttd) {
             event_free(pmnp->mst_ttd->te);
             __mst_free(pmnp->mst_ttd);
+        }
+        if (pmnp->mst_tbuf) {
+            mst_dealloc_mbuf(pmnp->mst_tbuf);
+        }
+        if (pmnp->mst_tiov) {
+            __mst_free(pmnp->mst_tiov);
         }
         //mst_destroy_mbuf_q(&pmnp->mst_twq);
         pmnp->mst_tfd = -1;
@@ -244,19 +274,15 @@ int mst_do_nw_read(mst_nw_peer_t *pmnp)
     fprintf(stderr, "Received %d bytes. Decode SCTP here\n", rlen);
     if (rlen < 0 && rlen != EAGAIN) {
         M_MNP_REF_DOWN_AND_FREE(pmnp);
-        //mst_cleanup_mnp(pmnp);
-        //mst_dealloc_mbuf(mbuf);
-        //__mst_free(iov);
         return -1;
     }
     if (rlen == 0) {
         M_MNP_REF_DOWN_AND_FREE(pmnp);
-        //mst_cleanup_mnp(pmnp);
-        //mst_dealloc_mbuf(mbuf);
-        //__mst_free(iov);
         return -1;
     }
-    mst_process_message(pmnp, &rmsg, rlen);
+    if (rlen > 0) {
+        mst_process_message(pmnp, &rmsg, rlen);
+    }
 
     event_add(pmnp->mst_re, NULL);
     mst_dealloc_mbuf(mbuf);
@@ -321,6 +347,15 @@ void mst_do_accept(evutil_socket_t fd, short event, void *arg)
         else {
             memset(mnp[cfd].mst_connection, 0, sizeof(mst_conn_t));
         }
+
+        mnp[cfd].mst_mt = (mst_csi_t *)__mst_malloc(sizeof(mst_csi_t));
+        assert(mnp[cfd].mst_mt);
+        memset(mnp[cfd].mst_mt, 0, sizeof(mst_csi_t));
+        mnp[cfd].mst_mt->client = (mst_node_info_t *)__mst_malloc(sizeof(mst_node_info_t));
+        assert(mnp[cfd].mst_mt->client);
+        mnp[cfd].mst_mt->client->host_ipv4 = client.sin_addr.s_addr;
+        mnp[cfd].mst_mt->client->port = client.sin_port;
+        mnp[cfd].mst_mt->nw_parms = pmnp->mst_mt->nw_parms;
 
         mnp[cfd].mst_fd = cfd;
         mnp[cfd].mst_re = event_new(meb.ceb, cfd, EV_READ, mst_do_read, (void *)&mnp[cfd]);
@@ -486,9 +521,9 @@ client_loop:
 
     fprintf(stderr, "RV: %d\n", rv);
     if (!mst_global_opts.mst_config.mst_mode) {
-        pthread_mutex_lock(&meb.teb_lock);
-        pthread_cond_wait(&meb.teb_cond, &meb.teb_lock);
-        pthread_mutex_unlock(&meb.teb_lock);
+        pthread_mutex_lock(&meb.ceb_lock);
+        pthread_cond_wait(&meb.ceb_cond, &meb.ceb_lock);
+        pthread_mutex_unlock(&meb.ceb_lock);
 
         goto client_loop;
     }

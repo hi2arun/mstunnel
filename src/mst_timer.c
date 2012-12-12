@@ -21,7 +21,9 @@ void mst_timer(evutil_socket_t fd, short event, void *arg)
             break;
         case MST_MNP:
             fprintf(stderr, "MNP timer\n");
-            mst_link_status(td->data);
+            if (-1 == mst_link_status(td->data)) {
+                return;
+            }
             break;
         default:
             fprintf(stderr, "Unknown timer\n");
