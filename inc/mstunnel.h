@@ -121,7 +121,6 @@ typedef struct mst_stat {
 
 typedef struct mst_tunn {
     evutil_socket_t tunn_fd;
-    //struct event_base *tunn_event_base;
     struct event *tunn_read_event; // read
     struct event *tunn_write_event; // write
     struct mst_timer_data *timer_data;
@@ -135,7 +134,6 @@ typedef struct mst_tunn {
 
 typedef struct mst_conn {
     evutil_socket_t conn_fd;
-    //struct event_base *conn_event_base;
     struct event *read_event; // read
     struct event *write_event; // write
     struct sockaddr_in ip_tuple;

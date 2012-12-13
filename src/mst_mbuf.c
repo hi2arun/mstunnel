@@ -63,16 +63,47 @@ void mst_free_iov(struct iovec *iov)
 }
 
 struct iovec *
+mst_mbuf_rework_iov(mst_buffer_t *mbuf, int rlen, int *iov_len)
+{
+    int tot_iovs = mbuf->iov_len;
+    struct iovec *iov = mbuf->iov;
+    int buf_len = mbuf->buf_len;
+    int needed_iovs = 0;
+
+
+    // Calculate how many iovs are needed and number of mbufs to be reclaimed
+    if (rlen > buf_len) {
+        // rlen > buf_len - we need more than one iovs
+        needed_iovs = (rlen / buf_len) + (rlen % buf_len)?1:0; // number of iovs to be preserved
+    }
+    else {
+        needed_iovs = 1; // number of iovs to be preserved
+    }
+
+    assert(tot_iovs >= needed_iovs);
+
+    // Now return excess mbufs to pool
+    iov[needed_iovs - 1].iov_len = (rlen % buf_len);
+
+    *iov_len = needed_iovs;
+    return iov;
+}
+
+struct iovec *
 mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len) 
 {
     struct iovec *iov;
     int index = 0;
     mst_buffer_t *mbuf_temp;
 
-    iov = (struct iovec*)__mst_malloc(sizeof(struct iovec) * (mbuf->frags_count + 1));
-    if (!iov) {
+    //iov = (struct iovec*)__mst_malloc(sizeof(struct iovec) * (mbuf->frags_count + 1));
+    mbuf->iov = (struct iovec*)__mst_malloc(sizeof(struct iovec) * (mbuf->frags_count + 1));
+    //if (!iov) {
+    if (!mbuf->iov) {
         return NULL;
     }
+
+    iov = mbuf->iov;
 
     iov[0].iov_len = mbuf->buf_len;
     iov[0].iov_base = mbuf->buffer;
@@ -86,6 +117,8 @@ mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len)
     fprintf(stderr, "Frags_count: %d, index: %d\n", mbuf->frags_count, index);
 
     assert(index == (mbuf->frags_count + 1));
+
+    mbuf->iov_len = index;
 
     *iov_len = index;
 
@@ -139,6 +172,10 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     // Now do the cleanup of mbuf
     mbuf->frags_count = 0;
     mbuf->mfrags = mbuf->mfrags_tail = NULL;
+    if (mbuf->iov) {
+        __mst_free(mbuf->iov);
+    }
+    mbuf->iov_len = 0;
 
     // Release free list lock here
     return;
@@ -284,6 +321,8 @@ mst_membuf_init()
             node->buffer = (void *)__mst_malloc(mst_mbuf_free_slots[index].size_per_block);
             node->buf_len = mst_mbuf_free_slots[index].size_per_block;
             node->mfrags_tail = node->mfrags = NULL;
+            node->iov = NULL;
+            node->iov_len = 0;
             node->__prev = NULL;
             node->__next = mst_mbuf_free_slots[index].__mbuf_chain.mbuf_list;
             if (mst_mbuf_free_slots[index].__mbuf_chain.mbuf_list) {

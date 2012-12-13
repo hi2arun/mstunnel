@@ -37,6 +37,8 @@ typedef struct mst_buffer {
     mst_buf_t buf_type;
     void *buffer;
     int buf_len;
+    struct iovec *iov;
+    int iov_len;
     int frags_count; // frags_len = frags_count * buf_len
     struct mst_buffer *mfrags;
     struct mst_buffer *mfrags_tail;

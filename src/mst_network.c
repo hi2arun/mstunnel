@@ -88,6 +88,26 @@ void mst_tun_do_read(evutil_socket_t fd, short event, void *arg)
     return;
 }
 
+int mst_do_tunn_write(mst_nw_peer_t *pmnp, int rlen)
+{
+    struct iovec *iov = NULL;
+    int iov_len = 0;
+    int rv = -1;
+    mst_buffer_t *mbuf = pmnp->mst_cbuf;
+    mst_tunn_t *pmtun = pmnp->mst_tunnel;
+
+    iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len);
+    assert(iov && iov_len);
+
+    rv = writev(pmtun->tunn_fd, iov, iov_len);
+    fprintf(stderr, "Wrote %d bytes on tun dev\n", rv);
+    if (rv < 0) {
+        fprintf(stderr, "WriteV error: %s\n", strerror(errno));
+    }
+
+    return 0;
+}
+
 //void mst_tun_do_read(evutil_socket_t fd, short event, void *arg)
 int mst_do_tun_read(mst_nw_peer_t *pmnp)
 {
@@ -105,7 +125,7 @@ int mst_do_tun_read(mst_nw_peer_t *pmnp)
     iov = mst_mbuf_to_iov(mbuf, &iov_len);
 
     pmnp->mst_tbuf = mbuf;
-    pmnp->mst_tiov = iov;
+    //pmnp->mst_tiov = iov;
     
     rlen = readv(pmtun->tunn_fd, iov, iov_len); // change it to NOWAIT later
     fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
@@ -126,9 +146,9 @@ int mst_do_tun_read(mst_nw_peer_t *pmnp)
 
     event_add(pmnp->mst_tre, NULL);
     mst_dealloc_mbuf(mbuf);
-    __mst_free(iov);
+    //__mst_free(iov);
     pmnp->mst_tbuf = NULL;
-    pmnp->mst_tiov = NULL;
+    //pmnp->mst_tiov = NULL;
     
     fprintf(stderr, "Wake up TUN base\n");
     mst_wakeup_tun_base();
@@ -144,12 +164,18 @@ int mst_do_conn_write(mst_nw_peer_t *pmnp, int rlen)
     struct cmsghdr *cmsg;
     struct sctp_sndrcvinfo *sinfo;
     mst_csi_t *mt = pmnp->mst_mt;
+    struct iovec *iov = NULL;
+    int iov_len = 0;
     
     fprintf(stderr, "%s(): __ENTRY__\n", __func__);
     memset(&omsg, 0, sizeof(omsg));
 
-    omsg.msg_iov = pmnp->mst_tiov;
-    omsg.msg_iovlen = pmnp->mst_tbuf->frags_count + 1;
+    iov = mst_mbuf_rework_iov(pmnp->mst_tbuf, rlen, &iov_len);
+
+    assert(iov && iov_len);
+
+    omsg.msg_iov = iov;
+    omsg.msg_iovlen = iov_len;
     omsg.msg_control = ctrlmsg;
     omsg.msg_controllen = sizeof(ctrlmsg);
     omsg.msg_flags = 0;
@@ -195,7 +221,7 @@ int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
         event_free(pmnp->mst_td->te);
         __mst_free(pmnp->mst_td);
         mst_dealloc_mbuf(pmnp->mst_cbuf);
-        __mst_free(pmnp->mst_ciov);
+        //__mst_free(pmnp->mst_ciov);
         if(pmnp->mst_mt) {
             if(pmnp->mst_mt->client) {
                 __mst_free(pmnp->mst_mt->client);
@@ -220,7 +246,7 @@ int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
             mst_dealloc_mbuf(pmnp->mst_tbuf);
         }
         if (pmnp->mst_tiov) {
-            __mst_free(pmnp->mst_tiov);
+            //__mst_free(pmnp->mst_tiov);
         }
         //mst_destroy_mbuf_q(&pmnp->mst_twq);
         pmnp->mst_tfd = -1;
@@ -267,7 +293,7 @@ int mst_do_nw_read(mst_nw_peer_t *pmnp)
     rmsg.msg_controllen = sizeof(ctrlmsg);
 
     pmnp->mst_cbuf = mbuf;
-    pmnp->mst_ciov = iov;
+    //pmnp->mst_ciov = iov;
 
     //rlen = recvmsg(fd, &rmsg, MSG_WAITALL); // change it to NOWAIT later
     rlen = recvmsg(pmconn->conn_fd, &rmsg, MSG_WAITALL); // change it to NOWAIT later
@@ -286,9 +312,9 @@ int mst_do_nw_read(mst_nw_peer_t *pmnp)
 
     event_add(pmnp->mst_re, NULL);
     mst_dealloc_mbuf(mbuf);
-    __mst_free(iov);
+    //__mst_free(iov);
     pmnp->mst_cbuf = NULL;
-    pmnp->mst_ciov = NULL;
+    //pmnp->mst_ciov = NULL;
     
     mst_wakeup_conn_base();
 

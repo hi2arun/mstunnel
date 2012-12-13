@@ -91,7 +91,7 @@ int mst_init_test_tuple(mst_csi_t **mt)
     pmt->nw_parms.num_ostreams = 10;
     pmt->nw_parms.max_instreams = 10;
     pmt->nw_parms.link_nice = 1.0;
-    pmt->nw_parms.xmit_factor = 10;
+    pmt->nw_parms.xmit_factor = 1000;
     pmt->nw_parms.xmit_max_pkts = (int)(pmt->nw_parms.link_nice * pmt->nw_parms.xmit_factor);
     pmt->nw_parms.xmit_curr_cnt = 0;
     pmt->nw_parms.xmit_curr_stream = 0;

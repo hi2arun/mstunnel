@@ -132,6 +132,7 @@ int
 mst_process_data(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     fprintf(stderr, "ENTRY: %s()\n", __func__);
+    mst_do_tunn_write(pmnp, rlen);
     return 0;
 }
 
@@ -234,7 +235,7 @@ mst_link_status(mst_nw_peer_t *pmnp)
 
     mst_print_sctp_paddrinfo(&link_status.sstat_primary);
 
-    mst_tuple->nw_parms.link_nice = (link_status.sstat_primary.spinfo_srtt)?(1/link_status.sstat_primary.spinfo_srtt):1.0;
+    mst_tuple->nw_parms.link_nice = (link_status.sstat_primary.spinfo_srtt)?((float)1.0/link_status.sstat_primary.spinfo_srtt):1.0;
     mst_tuple->nw_parms.xmit_max_pkts = (int)(mst_tuple->nw_parms.link_nice * mst_tuple->nw_parms.xmit_factor);
 
     mst_tuple->nw_parms.xmit_curr_stream = (mst_tuple->nw_parms.xmit_curr_stream + 1) % mst_tuple->nw_parms.num_ostreams;
