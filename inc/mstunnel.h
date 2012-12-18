@@ -24,6 +24,7 @@
 #include <sys/ioctl.h>
 #include <linux/if_tun.h>
 #include <sys/queue.h>
+#include <sys/epoll.h>
 
 #include "mst_mbuf.h"
 #include "mst_constants.h"
@@ -119,19 +120,6 @@ typedef struct mst_stat {
     unsigned long rx_error;
 } mst_stat_t;
 
-typedef struct mst_tunn {
-    evutil_socket_t tunn_fd;
-    struct event *tunn_read_event; // read
-    struct event *tunn_write_event; // write
-    struct mst_timer_data *timer_data;
-    mst_stat_t mst_tunn_stat;
-    mst_buffer_t *mbuf;
-    struct iovec *iov;
-    //mst_buffer_queue_t write_queue;
-    int ref_cnt;
-    pthread_mutex_t tunn_lock;
-} mst_tunn_t;
-
 typedef struct mst_conn {
     evutil_socket_t conn_fd;
     struct event *read_event; // read
@@ -148,23 +136,55 @@ typedef struct mst_conn {
 } mst_conn_t;
 
 typedef struct mst_event_base {
-    // connection_event_base
-    struct event_base *ceb;
-    pthread_mutex_t ceb_lock;
-    pthread_cond_t ceb_cond;
-    
-    // tunnel_event_base
-    struct event_base *teb;
-    pthread_mutex_t teb_lock;
-    pthread_cond_t teb_cond;
-    
+    // epoll infra
+    int epfd;
+    int ev_cnt; // total number of events
+    struct epoll_event ev;
+    struct epoll_event *evb;
+    pthread_mutex_t ev_lock;
+
     // Timer_event_base
     struct event_base *Teb;
 } mst_event_base_t;
 
+// MNP - FLAGs - 4 bytes
+// MSB 2-bytes: MNP Type (max 16 types)
+// 0x1 - MNP_LISTEN
+// 0x2 - MNP_CONNECT
+// 0x4 - MNP_PEER
+// 0x8 - MNP_TUN
+//
+// LSB 2-bytes: MNP State (max 16 states)
+// 0x1 - LISTEN
+// 0x2 - CONNECTING
+// 0x4 - CONNECTED
+// 0x8 - TUNNEL (Applicable only when MNP Type is MNP_TUN
+// 0x10 - ERROR
+//
+
+// MNP Types
+#define D_MNP_TYPE_LISTEN 0x1
+#define D_MNP_TYPE_CONNECT 0x2
+#define D_MNP_TYPE_PEER 0x4
+#define D_MNP_TYPE_TUN 0x8
+
+#define M_MNP_TYPE(x) (((x) & 0xFFFF0000) >> 16)
+#define M_MNP_SET_TYPE(x, state) (((x) & 0x0000FFFF) | (state << 16))
+
+// MNP State
+#define D_MNP_STATE_LISTEN 0x1
+#define D_MNP_STATE_CONNECTING 0x2
+#define D_MNP_STATE_CONNECTED 0x4
+#define D_MNP_STATE_TUNNEL 0x8
+#define D_MNP_STATE_ERROR 0x10
+
+#define M_MNP_STATE(x) ((x) & 0x0000FFFF)
+#define M_MNP_SET_STATE(x, state) (((x) & 0xFFFF0000) | state)
+
 typedef struct mst_nw_peer {
+    int mnp_flags;
     mst_conn_t *mst_connection;
-    mst_tunn_t *mst_tunnel;
+    int mnp_pair; //holds a pointer to its pair FD. conn <-> tunn pair
     mst_config_t *mst_config;
     pthread_mutex_t ref_lock;
     int ref_cnt;
@@ -211,19 +231,6 @@ typedef struct mst_timer {
 #define mst_wq mst_connection->write_queue
 #define mst_cl mst_connection->conn_lock
 #define mst_rc mst_connection->ref_cnt
-
-#define mst_tfd mst_tunnel->tunn_fd
-#define mst_teb mst_tunnel->tunn_event_base
-#define mst_tre mst_tunnel->tunn_read_event
-#define mst_twe mst_tunnel->tunn_write_event
-#define mst_ttd mst_tunnel->timer_data
-#define mst_tcs mst_tunnel->mst_tunn_stat
-#define mst_tbuf mst_tunnel->mbuf
-#define mst_tiov mst_tunnel->iov
-#define mst_twq mst_tunnel->write_queue
-#define mst_tcl mst_tunnel->tunn_lock
-#define mst_trc mst_tunnel->ref_cnt
-
 
 #define mst_ec mst_config.ev_cfg
 #define mst_ses mst_config.sctp_ev_subsc

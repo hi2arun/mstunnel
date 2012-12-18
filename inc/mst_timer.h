@@ -5,5 +5,6 @@
 extern mst_timer_t mst_timer_base;
 extern void mst_timer(evutil_socket_t fd, short event, void *arg);
 extern int mst_timer_init(void);
+extern void *mst_loop_timer(void *);
 
 #endif // !__MST_TIMER_H__

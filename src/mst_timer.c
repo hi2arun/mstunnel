@@ -44,7 +44,7 @@ void *mst_loop_timer(void *arg)
 
 int mst_timer_init(void)
 {
-    pthread_t pt_status_timer;
+    //pthread_t pt_status_timer;
 
     sys_td = (mst_timer_data_t *)__mst_malloc(sizeof(mst_timer_data_t));
     assert(sys_td);
@@ -63,7 +63,7 @@ int mst_timer_init(void)
     evtimer_add(sys_td->te, &sys_td->timeo);
 
     fprintf(stderr, "status timer... base: %p\n", meb.Teb);
-    pthread_create(&pt_status_timer, NULL, mst_loop_timer, NULL);
+    //pthread_create(&pt_status_timer, NULL, mst_loop_timer, NULL);
 
     return 0;
 }

@@ -58,10 +58,14 @@ deq_again:
 
     switch(qelm->q_type) {
         case MST_SCTP_Q:
+            pthread_mutex_lock(&qelm->pmnp->mst_cl);
             mst_do_nw_read(qelm->pmnp);
+            pthread_mutex_unlock(&qelm->pmnp->mst_cl);
             break;
         case MST_TUN_Q:
+            pthread_mutex_lock(&qelm->pmnp->mst_cl);
             mst_do_tun_read(qelm->pmnp);
+            pthread_mutex_unlock(&qelm->pmnp->mst_cl);
             break;
         default:
             fprintf(stderr, "Unknown qelm->q_type\n");

@@ -135,9 +135,10 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     fprintf(stderr, "%s() called: size: %d, frags_count: %d\n", __func__, mbuf->buf_type, mbuf->frags_count);
 
     assert((mbuf->buf_type >= mst_buf32) && (mbuf->buf_type < mst_buf_unk));
-    mbuf_free_slot = &mst_mbuf_free_slots[mbuf->buf_type];
 
     // Acquire inuse list lock here
+    pthread_mutex_lock(&mbuf_inuse_slot->mem_lock);
+
     // it is the first element
     if (!mbuf->__prev) {
         mbuf_inuse_slot->__mbuf_chain.mbuf_list = mbuf->__next;
@@ -149,9 +150,14 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     mbuf_inuse_slot->__mbuf_chain.mbuf_available -= (mbuf->frags_count + 1);
     mbuf->__prev = NULL;
     mbuf->__next = NULL;
-
+    
     // Release inuse list lock here
+    pthread_mutex_unlock(&mbuf_inuse_slot->mem_lock);
+    
+    mbuf_free_slot = &mst_mbuf_free_slots[mbuf->buf_type];
+    
     // Acquire free list lock here
+    pthread_mutex_lock(&mbuf_free_slot->mem_lock);
 
     // Now that mbuf is removed from 'inuse' slots, add it to 'free' slots
     mbuf_temp = mbuf_free_slot->__mbuf_chain.mbuf_list;
@@ -174,10 +180,12 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     mbuf->mfrags = mbuf->mfrags_tail = NULL;
     if (mbuf->iov) {
         __mst_free(mbuf->iov);
+        mbuf->iov = NULL;
     }
     mbuf->iov_len = 0;
 
     // Release free list lock here
+    pthread_mutex_unlock(&mbuf_free_slot->mem_lock);
     return;
     
 }
@@ -222,15 +230,19 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
     }
     assert((slot >= mst_buf32) && (slot < mst_buf_unk));
     
+    pthread_mutex_lock(&mst_mbuf_free_slots[slot].mem_lock);
     if (mst_mbuf_free_slots[slot].__mbuf_chain.mbuf_available) {
         new_slot = slot;
     }
     else {
+        pthread_mutex_unlock(&mst_mbuf_free_slots[slot].mem_lock);
         for (index = (slot + 1)%mst_buf_unk; index != slot; index = (index + 1)%mst_buf_unk) {
+            pthread_mutex_lock(&mst_mbuf_free_slots[index].mem_lock);
             if (mst_mbuf_free_slots[index].__mbuf_chain.mbuf_available) {
                 new_slot = index;
                 break;
             }
+            pthread_mutex_unlock(&mst_mbuf_free_slots[index].mem_lock);
         }
     }
     fprintf(stderr, "Requested size: %d, frag_size: %d, slot: %d, new_slot: %d\n", size, frag_size, slot, new_slot);
@@ -238,6 +250,8 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
     if (size < mst_mbuf_free_slots[new_slot].size_per_block) {
         // TODO: Check with OS for the asked memory
         fprintf(stderr, "Assert size < size_per_block\n");
+        
+        pthread_mutex_unlock(&mst_mbuf_free_slots[new_slot].mem_lock);
         return NULL;
     }
 
@@ -246,6 +260,8 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
     if (frags_count > mst_mbuf_free_slots[new_slot].__mbuf_chain.mbuf_available) {
         // TODO: Check with OS for the asked memory
         fprintf(stderr, "Assert frags_count > mbuf_available\n");
+        
+        pthread_mutex_unlock(&mst_mbuf_free_slots[new_slot].mem_lock);
         return NULL;
     }
     // frags_count should at least be 1
@@ -255,8 +271,6 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
         mst_buf_head_t *__mbuf_head = &(mst_mbuf_free_slots[new_slot].__mbuf_chain);
         mst_buffer_t *__mbuf = NULL;
         mst_buffer_t *mbuf_temp = NULL;
-
-        pthread_mutex_lock(&mst_mbuf_free_slots[new_slot].mem_lock);
 
         __mbuf = __mbuf_head->mbuf_list;
 

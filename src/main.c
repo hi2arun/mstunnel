@@ -79,12 +79,12 @@ int mst_init_test_tuple(mst_csi_t **mt)
         return -1;
     }
     pmt->client->host_name = NULL; // letz go by IP address
-    pmt->client->host_addr = "10.10.10.1";
+    pmt->client->host_addr = "14.1.1.2";
     pmt->client->port = 0; // leave it to OS for port assign
     pmt->client->policy_mark = 0; // Disable policy mark
 
     pmt->server->host_name = NULL; // letz go by IP address
-    pmt->server->host_addr = "10.10.10.1";
+    pmt->server->host_addr = "14.1.1.1";
     pmt->server->port = 40400; 
     pmt->server->policy_mark = 0; // Disable policy mark
 
@@ -154,13 +154,17 @@ int main(int argc, char **argv)
 
     mst_log_init();
     mst_levent_init();
-    mst_timer_init();
+    //mst_timer_init();
     mst_tun_init();
+    mst_timer_init();
     mst_init_nw_queue();
     if (mst_setup_network()) {
         exit(EXIT_FAILURE);
     }
-    mst_loop_network();
+    //mst_loop_network();
+    mst_init_network();
+
+    mst_loop_timer(NULL);
 
     return 0;
 }
