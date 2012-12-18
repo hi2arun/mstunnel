@@ -114,7 +114,7 @@ mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len)
         iov[index].iov_base = mbuf_temp->buffer;
     }
 
-    fprintf(stderr, "Frags_count: %d, index: %d\n", mbuf->frags_count, index);
+    //fprintf(stderr, "Frags_count: %d, index: %d\n", mbuf->frags_count, index);
 
     assert(index == (mbuf->frags_count + 1));
 
@@ -132,7 +132,7 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     mst_mem_config_t *mbuf_free_slot = NULL;
     mst_buffer_t *mbuf_temp = NULL;
 
-    fprintf(stderr, "%s() called: size: %d, frags_count: %d\n", __func__, mbuf->buf_type, mbuf->frags_count);
+    //fprintf(stderr, "%s() called: size: %d, frags_count: %d\n", __func__, mbuf->buf_type, mbuf->frags_count);
 
     assert((mbuf->buf_type >= mst_buf32) && (mbuf->buf_type < mst_buf_unk));
 
@@ -226,7 +226,7 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
             // This is a wastage of bytes. Thus ask for properly sized blocks in 2^n, where 4 > n <= 12.
             slot += 1;
         }
-        fprintf(stderr, "Requested size: %d, frag_size: %d, slot: %d\n", size, frag_size, slot);
+        //fprintf(stderr, "Requested size: %d, frag_size: %d, slot: %d\n", size, frag_size, slot);
     }
     assert((slot >= mst_buf32) && (slot < mst_buf_unk));
     
@@ -245,21 +245,21 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
             pthread_mutex_unlock(&mst_mbuf_free_slots[index].mem_lock);
         }
     }
-    fprintf(stderr, "Requested size: %d, frag_size: %d, slot: %d, new_slot: %d\n", size, frag_size, slot, new_slot);
+    //fprintf(stderr, "Requested size: %d, frag_size: %d, slot: %d, new_slot: %d\n", size, frag_size, slot, new_slot);
 
     if (size < mst_mbuf_free_slots[new_slot].size_per_block) {
         // TODO: Check with OS for the asked memory
-        fprintf(stderr, "Assert size < size_per_block\n");
+        //fprintf(stderr, "Assert size < size_per_block\n");
         
         pthread_mutex_unlock(&mst_mbuf_free_slots[new_slot].mem_lock);
         return NULL;
     }
 
     frags_count = size / mst_mbuf_free_slots[new_slot].size_per_block;
-    fprintf(stderr, "Frags count: %d, spb: %d\n", frags_count, mst_mbuf_free_slots[new_slot].size_per_block);
+    //fprintf(stderr, "Frags count: %d, spb: %d\n", frags_count, mst_mbuf_free_slots[new_slot].size_per_block);
     if (frags_count > mst_mbuf_free_slots[new_slot].__mbuf_chain.mbuf_available) {
         // TODO: Check with OS for the asked memory
-        fprintf(stderr, "Assert frags_count > mbuf_available\n");
+        //fprintf(stderr, "Assert frags_count > mbuf_available\n");
         
         pthread_mutex_unlock(&mst_mbuf_free_slots[new_slot].mem_lock);
         return NULL;
@@ -346,7 +346,7 @@ mst_membuf_init()
         }
     }
 
-    fprintf(stderr, "Membuf slots initialized successfully\n");
+    //fprintf(stderr, "Membuf slots initialized successfully\n");
 
     return 0;
 }

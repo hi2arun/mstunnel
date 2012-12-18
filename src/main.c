@@ -157,7 +157,9 @@ int main(int argc, char **argv)
     //mst_timer_init();
     mst_tun_init();
     mst_timer_init();
+    mst_init_epoll_queue();
     mst_init_nw_queue();
+    mst_init_tun_queue();
     if (mst_setup_network()) {
         exit(EXIT_FAILURE);
     }
@@ -165,6 +167,8 @@ int main(int argc, char **argv)
     mst_init_network();
 
     mst_loop_timer(NULL);
+
+    fprintf(stderr, "Something caused exit....\n");
 
     return 0;
 }

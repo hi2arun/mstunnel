@@ -139,6 +139,7 @@ mst_process_data(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 int 
 mst_dump_ctrlmsg(int type, sctp_cmsg_data_t *rdata)
 {
+    return 0;
     switch(type) {
         case SCTP_INIT:
             fprintf(stderr, "MSG TYPE: SCTP_INIT\n");
@@ -196,6 +197,8 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 int
 mst_print_sctp_paddrinfo(struct sctp_paddrinfo *sstat_primary)
 {
+    return 0;
+
     fprintf(stderr, "Spi assoc id: %d, ", sstat_primary->spinfo_assoc_id);
     fprintf(stderr, "Spi state: %d, ", sstat_primary->spinfo_state);
     fprintf(stderr, "Spi cwnd: %d, ", sstat_primary->spinfo_cwnd);
@@ -223,6 +226,7 @@ mst_link_status(mst_nw_peer_t *pmnp)
     }
 
     mst_tuple = pmnp->mst_mt;
+#if 0
     fprintf(stderr, "Link status for fd: %d, ", pmnp->mst_fd);
     fprintf(stderr, "Assoc ID: %d, ", link_status.sstat_assoc_id);
     fprintf(stderr, "State: %d, ", link_status.sstat_state);
@@ -232,6 +236,7 @@ mst_link_status(mst_nw_peer_t *pmnp)
     fprintf(stderr, "InStrms: %d, ", link_status.sstat_instrms);
     fprintf(stderr, "OutStrms: %d, ", link_status.sstat_outstrms);
     fprintf(stderr, "FragPoint: %d, ", link_status.sstat_fragmentation_point);
+#endif
 
     mst_print_sctp_paddrinfo(&link_status.sstat_primary);
 
@@ -240,7 +245,7 @@ mst_link_status(mst_nw_peer_t *pmnp)
 
     mst_tuple->nw_parms.xmit_curr_stream = (mst_tuple->nw_parms.xmit_curr_stream + 1) % mst_tuple->nw_parms.num_ostreams;
 
-    fprintf(stderr, "Link nice: %f, xmit_max_pkts: %d\n", mst_tuple->nw_parms.link_nice, mst_tuple->nw_parms.xmit_max_pkts);
+    //fprintf(stderr, "Link nice: %f, xmit_max_pkts: %d\n", mst_tuple->nw_parms.link_nice, mst_tuple->nw_parms.xmit_max_pkts);
     
     M_MNP_REF_DOWN_AND_FREE(pmnp);
 

@@ -17,10 +17,10 @@ void mst_timer(evutil_socket_t fd, short event, void *arg)
     }
     switch(td->type) {
         case MST_SYS:
-            fprintf(stderr, "System timer\n");
+            //fprintf(stderr, "System timer\n");
             break;
         case MST_MNP:
-            fprintf(stderr, "MNP timer\n");
+            //fprintf(stderr, "MNP timer\n");
             if (-1 == mst_link_status(td->data)) {
                 return;
             }
