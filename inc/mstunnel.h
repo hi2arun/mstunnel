@@ -132,7 +132,7 @@ typedef struct mst_conn {
     struct iovec *iov;
     //mst_buffer_queue_t write_queue;
     int ref_cnt;
-    pthread_mutex_t conn_lock;
+    //pthread_mutex_t conn_lock;
 } mst_conn_t;
 
 typedef struct mst_event_base {

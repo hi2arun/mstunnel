@@ -74,7 +74,8 @@ mst_mbuf_rework_iov(mst_buffer_t *mbuf, int rlen, int *iov_len)
     // Calculate how many iovs are needed and number of mbufs to be reclaimed
     if (rlen > buf_len) {
         // rlen > buf_len - we need more than one iovs
-        needed_iovs = (rlen / buf_len) + (rlen % buf_len)?1:0; // number of iovs to be preserved
+        needed_iovs = (rlen / buf_len) + ((rlen % buf_len)?1:0); // number of iovs to be preserved
+        //fprintf(stderr, "rlen > buf_len: needed_iovs: %d\n", needed_iovs);
     }
     else {
         needed_iovs = 1; // number of iovs to be preserved
@@ -84,6 +85,7 @@ mst_mbuf_rework_iov(mst_buffer_t *mbuf, int rlen, int *iov_len)
 
     // Now return excess mbufs to pool
     iov[needed_iovs - 1].iov_len = (rlen % buf_len);
+    //fprintf(stderr, "Needed iovs: %d, rlen: %d, buf_len: %d\n", needed_iovs, rlen, buf_len);
 
     *iov_len = needed_iovs;
     return iov;
@@ -112,6 +114,7 @@ mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len)
 
         iov[index].iov_len = mbuf_temp->buf_len;
         iov[index].iov_base = mbuf_temp->buffer;
+        //fprintf(stderr, "mbuf: %p, ftail: %p, mbuf_temp: %p\n", mbuf, mbuf->mfrags_tail, mbuf_temp);
     }
 
     //fprintf(stderr, "Frags_count: %d, index: %d\n", mbuf->frags_count, index);
@@ -136,6 +139,7 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
 
     assert((mbuf->buf_type >= mst_buf32) && (mbuf->buf_type < mst_buf_unk));
 
+#if 0
     // Acquire inuse list lock here
     pthread_mutex_lock(&mbuf_inuse_slot->mem_lock);
 
@@ -153,7 +157,9 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     
     // Release inuse list lock here
     pthread_mutex_unlock(&mbuf_inuse_slot->mem_lock);
-    
+
+#endif
+
     mbuf_free_slot = &mst_mbuf_free_slots[mbuf->buf_type];
     
     // Acquire free list lock here
@@ -177,7 +183,8 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     mbuf_free_slot->__mbuf_chain.mbuf_available += (mbuf->frags_count + 1);
     // Now do the cleanup of mbuf
     mbuf->frags_count = 0;
-    mbuf->mfrags = mbuf->mfrags_tail = NULL;
+    mbuf->mfrags = NULL;
+    mbuf->mfrags_tail = NULL;
     if (mbuf->iov) {
         __mst_free(mbuf->iov);
         mbuf->iov = NULL;
@@ -249,7 +256,7 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
 
     if (size < mst_mbuf_free_slots[new_slot].size_per_block) {
         // TODO: Check with OS for the asked memory
-        //fprintf(stderr, "Assert size < size_per_block\n");
+        fprintf(stderr, "Assert size < size_per_block\n");
         
         pthread_mutex_unlock(&mst_mbuf_free_slots[new_slot].mem_lock);
         return NULL;
@@ -259,7 +266,7 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
     //fprintf(stderr, "Frags count: %d, spb: %d\n", frags_count, mst_mbuf_free_slots[new_slot].size_per_block);
     if (frags_count > mst_mbuf_free_slots[new_slot].__mbuf_chain.mbuf_available) {
         // TODO: Check with OS for the asked memory
-        //fprintf(stderr, "Assert frags_count > mbuf_available\n");
+        fprintf(stderr, "Assert frags_count > mbuf_available\n");
         
         pthread_mutex_unlock(&mst_mbuf_free_slots[new_slot].mem_lock);
         return NULL;
@@ -278,7 +285,7 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
         for(index = 0, mbuf_temp = __mbuf; index < (frags_count - 1) && mbuf_temp; index++) {
             mbuf_temp = mbuf_temp->__next;
         }
-        if (frags_count) {
+        if (frags_count - 1) {
             __mbuf->mfrags = __mbuf->__next;
             __mbuf->mfrags->__prev = NULL;
             __mbuf->mfrags_tail = mbuf_temp;
@@ -292,7 +299,7 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
         
         pthread_mutex_unlock(&mst_mbuf_free_slots[new_slot].mem_lock);
         
-        mst_add_mbuf_to_inuse(slot, __mbuf);
+        //mst_add_mbuf_to_inuse(new_slot, __mbuf);
         return __mbuf;
     }
 

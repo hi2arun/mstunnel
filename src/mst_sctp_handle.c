@@ -10,7 +10,7 @@ mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
     union sctp_notification *snp = NULL;
     struct sctp_assoc_change *sac;
 
-    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    //fprintf(stderr, "ENTRY: %s()\n", __func__);
     msg_iov = rmsg->msg_iov;
     // Notification should be in the first vector
     snp = (union sctp_notification *)msg_iov->iov_base;
@@ -19,23 +19,23 @@ mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
     switch(sac->sac_state) {
         // Comm UP
         case 0:
-            fprintf(stderr, "COMM_UP - Setting up tunnel\n");
+            //fprintf(stderr, "COMM_UP - Setting up tunnel\n");
             mst_setup_tunnel(pmnp);
             break;
         // Comm RESTART
         case 2:
-            fprintf(stderr, "COMM_RESTART\n");
+            //fprintf(stderr, "COMM_RESTART\n");
             break;
         // Shutdown COMPLETE
         case 3:
-            fprintf(stderr, "SHUTDOWN_COMPLETE\n");
+            //fprintf(stderr, "SHUTDOWN_COMPLETE\n");
             break;
         // Comm DOWN
         case 1:
             // Cant Start ASSOC
         case 4:
         default:
-            fprintf(stderr, "Cleanup mnp: assoc_change to %d\n", sac->sac_state);
+            //fprintf(stderr, "Cleanup mnp: assoc_change to %d\n", sac->sac_state);
             mst_cleanup_mnp(pmnp);
     }
     
@@ -44,31 +44,31 @@ mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 int
 mst_process_pac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    //fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
 mst_process_sf(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    //fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
 mst_process_re(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    //fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
 mst_process_se(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    //fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
 mst_process_pde(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    //fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
@@ -80,7 +80,7 @@ mst_process_ai(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 int
 mst_process_auth_ind(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    //fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 
@@ -91,7 +91,7 @@ mst_process_notification(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
     union sctp_notification *snp = NULL;
     struct iovec *msg_iov = NULL;
 
-    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    //fprintf(stderr, "ENTRY: %s()\n", __func__);
     msg_iov = rmsg->msg_iov;
     // Notification should be in the first vector
     snp = (union sctp_notification *)msg_iov->iov_base;
@@ -131,7 +131,7 @@ mst_process_notification(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 int
 mst_process_data(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    //fprintf(stderr, "ENTRY: %s()\n", __func__);
     mst_do_tunn_write(pmnp, rlen);
     return 0;
 }
