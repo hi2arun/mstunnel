@@ -28,33 +28,19 @@
 
 #include "mst_mbuf.h"
 #include "mst_constants.h"
+#include "mst_atomic.h"
 
 #define M_MNP_REF_UP(x) \
-    {\
-        pthread_mutex_lock(&(x)->ref_lock); \
-        (x)->ref_cnt++; \
-        pthread_mutex_unlock(&(x)->ref_lock); \
-    }
+        atomic_inc(&(x)->ref_cnt)
 
 #define M_MNP_REF_DOWN(x) \
-    {\
-        pthread_mutex_lock(&(x)->ref_lock); \
-        if ((x)->ref_cnt) { \
-            (x)->ref_cnt--; \
-        }\
-        pthread_mutex_unlock(&(x)->ref_lock); \
-    }
+        atomic_dec(&(x)->ref_cnt)
 
 #define M_MNP_REF_DOWN_AND_FREE(x) \
     {\
-        pthread_mutex_lock(&(x)->ref_lock); \
-        if ((x)->ref_cnt) { \
-            (x)->ref_cnt--; \
-        }\
-        if (0 == (x)->ref_cnt) { \
+        if (atomic_dec_and_test(&(x)->ref_cnt)) { \
             mst_cleanup_mnp(x); \
         }\
-        pthread_mutex_unlock(&(x)->ref_lock); \
     }
 
 typedef struct mst_node_info {
@@ -119,6 +105,8 @@ typedef struct mst_stat {
     unsigned long tx_error;
     unsigned long rx_error;
 } mst_stat_t;
+    
+TAILQ_HEAD(mst_mbuf_q, mst_buf_q);
 
 typedef struct mst_conn {
     evutil_socket_t conn_fd;
@@ -130,9 +118,11 @@ typedef struct mst_conn {
     mst_stat_t mst_conn_stat;
     mst_buffer_t *mbuf;
     struct iovec *iov;
+    struct mst_mbuf_q mbuf_wq; // write_queue
+    pthread_mutex_t wq_lock;
     //mst_buffer_queue_t write_queue;
-    int ref_cnt;
-    //pthread_mutex_t conn_lock;
+    //int ref_cnt;
+    int event_flags;
 } mst_conn_t;
 
 typedef struct mst_event_base {
@@ -187,7 +177,7 @@ typedef struct mst_nw_peer {
     int mnp_pair; //holds a pointer to its pair FD. conn <-> tunn pair
     mst_config_t *mst_config;
     pthread_mutex_t ref_lock;
-    int ref_cnt;
+    atomic_t ref_cnt;
 } mst_nw_peer_t;
 
 typedef enum mst_nw_q_type {
@@ -228,9 +218,10 @@ typedef struct mst_timer {
 #define mst_cs mst_connection->mst_conn_stat
 #define mst_cbuf mst_connection->mbuf
 #define mst_ciov mst_connection->iov
-#define mst_wq mst_connection->write_queue
-#define mst_cl mst_connection->conn_lock
+#define mst_wq mst_connection->mbuf_wq
+#define mst_wql mst_connection->wq_lock
 #define mst_rc mst_connection->ref_cnt
+#define mst_ef mst_connection->event_flags
 
 #define mst_ec mst_config.ev_cfg
 #define mst_ses mst_config.sctp_ev_subsc

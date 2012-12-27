@@ -10,6 +10,21 @@ mst_nw_peer_t *mnp; // For peers
 mst_nw_peer_t *mnp_l; // For local socket inits 
 
 extern pthread_mutex_t mst_eq_lock;
+extern pthread_cond_t mst_eq_cond;
+
+inline void mst_epoll_events(mst_nw_peer_t *pmnp, int ev_cmd, int events)
+{
+    struct epoll_event ev;
+    int epfd = meb.epfd;
+    int rv = 0;
+
+    ev.events = events;
+    ev.data.ptr = pmnp;
+    rv = epoll_ctl(epfd, ev_cmd, pmnp->mst_fd, &ev);
+    assert(!rv);
+    pmnp->mst_ef = events;
+    return;
+}
 
 int mst_create_socket(void)
 {
@@ -61,49 +76,59 @@ int mst_bind_socket(mst_nw_peer_t *pmnp, int mode)
     return 0;
 }
 
-void mst_tun_do_write(evutil_socket_t fd, short event, void *arg)
+void mst_tun_write(mst_nw_peer_t *pmnp)
 {
+    mst_buf_q_t *qelm;
     //fprintf(stderr, "%s(): __ENTRY__\n", __func__);
+    pthread_mutex_lock(&pmnp->ref_lock);
+    mst_epoll_events (pmnp, EPOLL_CTL_MOD, (pmnp->mst_ef & (~EPOLLOUT)));
+    pthread_mutex_unlock(&pmnp->ref_lock);
+    
+    while (NULL != (qelm = mst_mbuf_dequeue_tail(pmnp))) {
+        mst_do_tun_write(pmnp, qelm->mbuf, qelm->wlen);
+        mst_dealloc_mbuf(qelm->mbuf);
+    }
+    
     return;
 }
 
-//void mst_tun_do_read(evutil_socket_t fd, short event, void *arg)
-void mst_tun_do_read(mst_nw_peer_t *pmnp)
+void mst_tun_read(mst_nw_peer_t *pmnp)
 {
     //fprintf(stderr, "%s(): __ENTRY__: %s\n", __func__, "Added to MST_TUN_Q\n");
-    pthread_mutex_lock(&meb.ev_lock);
-    //fprintf(stderr, "Del TUN from poll\n");
-    epoll_ctl(meb.epfd, EPOLL_CTL_DEL, pmnp->mst_fd, NULL);
-    pthread_mutex_unlock(&meb.ev_lock);
     M_MNP_REF_UP(pmnp);
+    pthread_mutex_lock(&pmnp->ref_lock);
+    mst_epoll_events (pmnp, EPOLL_CTL_MOD, (pmnp->mst_ef & (~EPOLLIN)));
+    pthread_mutex_unlock(&pmnp->ref_lock);
     mst_insert_tun_queue(MST_TUN_Q, pmnp);
     //fprintf(stderr, "%s(): __EXIT__: %s\n", __func__, "Added to MST_TUN_Q\n");
     return;
 }
 
-int mst_do_tunn_write(mst_nw_peer_t *pmnp, int rlen)
+int mst_do_tun_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
 {
     struct iovec *iov = NULL;
     int iov_len = 0;
     int rv = -1;
-    mst_buffer_t *mbuf = pmnp->mst_cbuf;
-    mst_nw_peer_t *pmnp_conn = (mst_nw_peer_t *)pmnp->mnp_pair;
+    //mst_buffer_t *mbuf = pmnp->mst_cbuf;
+    //mst_nw_peer_t *pmnp_conn = (mst_nw_peer_t *)pmnp->mnp_pair;
 
     iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len);
     assert(iov && iov_len);
 
-    //fprintf(stderr, "%s:%d lock\n", __FILE__, __LINE__);
-    rv = writev(pmnp_conn->mst_fd, iov, iov_len);
-    //fprintf(stderr, "Wrote %d bytes on tun dev\n", rv);
+    //fprintf(stderr, "%s:%d \n", __FILE__, __LINE__);
+    //rv = writev(pmnp_conn->mst_fd, iov, iov_len);
+    rv = writev(pmnp->mst_fd, iov, iov_len);
     if (rv < 0) {
         //fprintf(stderr, "WriteV error: %s\n", strerror(errno));
+    }
+    else {
+        //fprintf(stderr, "Wrote %d bytes on tun dev\n", rv);
     }
     //fprintf(stderr, "%s:%d unlock\n", __FILE__, __LINE__);
 
     return 0;
 }
 
-//void mst_tun_do_read(evutil_socket_t fd, short event, void *arg)
 int mst_do_tun_read(mst_nw_peer_t *pmnp)
 {
     struct iovec *iov = NULL;
@@ -123,7 +148,7 @@ int mst_do_tun_read(mst_nw_peer_t *pmnp)
     
     rlen = readv(pmnp->mst_fd, iov, iov_len); // change it to NOWAIT later
     //fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
-    if (rlen < 0 && rlen != EAGAIN) {
+    if (rlen < 0 && errno != EAGAIN) {
         //fprintf(stderr, "Read error - 1: %s\n", strerror(errno));
         M_MNP_REF_DOWN_AND_FREE(pmnp);
         return -1;
@@ -134,8 +159,19 @@ int mst_do_tun_read(mst_nw_peer_t *pmnp)
         return -1;
     }
 
+    if (EAGAIN == errno) {
+        mst_dealloc_mbuf(mbuf);
+        pmnp->mst_cbuf = NULL;
+        return 0;
+    }
+
     if (rlen > 0) {
-        mst_do_conn_write(pmnp, rlen);
+        mst_do_nw_write((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
+#if 0
+        if (-1 == mst_insert_mbuf_q((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen)) {
+            mst_dealloc_mbuf(mbuf);
+        }
+#endif
     }
 
     mst_dealloc_mbuf(mbuf);
@@ -143,7 +179,7 @@ int mst_do_tun_read(mst_nw_peer_t *pmnp)
     return 0;
 }
 
-int mst_do_conn_write(mst_nw_peer_t *pmnp, int rlen)
+int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
 {
     int rv = -1;
     struct msghdr omsg;
@@ -153,16 +189,14 @@ int mst_do_conn_write(mst_nw_peer_t *pmnp, int rlen)
     mst_csi_t *mt = NULL;
     struct iovec *iov = NULL;
     int iov_len = 0;
-    mst_nw_peer_t *pmnp_pair = (mst_nw_peer_t *)pmnp->mnp_pair;
+    //mst_nw_peer_t *pmnp_pair = (mst_nw_peer_t *)pmnp->mnp_pair;
     
-    //fprintf(stderr, "%s(): __ENTRY__\n", __func__);
-    //fprintf(stderr, "%s(): pmnp: %p, fd: %d\n", __func__, pmnp, pmnp->mst_fd);
-    
-    //fprintf(stderr, "%s:%d lock\n", __FILE__, __LINE__);
-    mt = pmnp_pair->mst_mt;
+    //mt = pmnp_pair->mst_mt;
+    mt = pmnp->mst_mt;
     memset(&omsg, 0, sizeof(omsg));
 
-    iov = mst_mbuf_rework_iov(pmnp->mst_cbuf, rlen, &iov_len);
+    //iov = mst_mbuf_rework_iov(pmnp->mst_cbuf, rlen, &iov_len);
+    iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len);
 
     assert(iov && iov_len);
 
@@ -181,11 +215,13 @@ int mst_do_conn_write(mst_nw_peer_t *pmnp, int rlen)
     sinfo = (struct sctp_sndrcvinfo *)CMSG_DATA(cmsg);
     memset(sinfo, 0, sizeof(struct sctp_sndrcvinfo));
 
-    sinfo->sinfo_ppid = rand();
+    //sinfo->sinfo_ppid = rand();
+    sinfo->sinfo_ppid = 0;
     sinfo->sinfo_stream = mt->nw_parms.xmit_curr_stream;
     sinfo->sinfo_flags = 0;
 
-    rv = sendmsg(pmnp_pair->mst_fd, &omsg, MSG_WAITALL);
+    //rv = sendmsg(pmnp_pair->mst_fd, &omsg, MSG_WAITALL);
+    rv = sendmsg(pmnp->mst_fd, &omsg, MSG_WAITALL);
     
     //fprintf(stderr, "%s:%d unlock\n", __FILE__, __LINE__);
 
@@ -194,16 +230,20 @@ int mst_do_conn_write(mst_nw_peer_t *pmnp, int rlen)
     return 0;
 }
 
-void mst_do_write(evutil_socket_t fd, short event, void *arg)
+void mst_nw_write(mst_nw_peer_t *pmnp)
 {
+    mst_buf_q_t *qelm;
     //fprintf(stderr, "%s(): __ENTRY__\n", __func__);
-    return;
-}
 
-int mst_destroy_mbuf_q(mst_buffer_queue_t *mbuf_q)
-{
-    //fprintf(stderr, "%s(): __ENTRY__\n", __func__);
-    return 0;
+    pthread_mutex_lock(&pmnp->ref_lock);
+    mst_epoll_events (pmnp, EPOLL_CTL_MOD, (pmnp->mst_ef & (~EPOLLOUT)));
+    pthread_mutex_unlock(&pmnp->ref_lock);
+    
+    while (NULL != (qelm = mst_mbuf_dequeue_tail(pmnp))) {
+        mst_do_nw_write(pmnp, qelm->mbuf, qelm->wlen);
+        mst_dealloc_mbuf(qelm->mbuf);
+    }
+    return;
 }
 
 int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
@@ -230,22 +270,20 @@ int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
         //mst_destroy_mbuf_q(&pmnp->mst_wq);
         pmnp->mst_fd = -1;
     }
-    //fprintf(stderr, "Cleaning up mnp %p\n", pmnp);
+    fprintf(stderr, "Cleaning up mnp %p\n", pmnp);
 
     return 0;
 
 }
 
-//void mst_do_read(evutil_socket_t fd, short event, void *arg)
-void mst_do_read(mst_nw_peer_t *pmnp)
+void mst_nw_read(mst_nw_peer_t *pmnp)
 {
     //fprintf(stderr, "%s(): __ENTRY__: %s\n", __func__, "Added to MST_SCTP_Q\n");
     //fprintf(stderr, "%s(): pmnp: %p, fd: %d\n", __func__, pmnp, pmnp->mst_fd);
-    pthread_mutex_lock(&meb.ev_lock);
-    //fprintf(stderr, "Del NW from poll\n");
-    epoll_ctl(meb.epfd, EPOLL_CTL_DEL, pmnp->mst_fd, NULL);
-    pthread_mutex_unlock(&meb.ev_lock);
     M_MNP_REF_UP(pmnp);
+    pthread_mutex_lock(&pmnp->ref_lock);
+    mst_epoll_events (pmnp, EPOLL_CTL_MOD, (pmnp->mst_ef & (~EPOLLIN)));
+    pthread_mutex_unlock(&pmnp->ref_lock);
     mst_insert_nw_queue(MST_SCTP_Q, pmnp);
     //fprintf(stderr, "%s(): __EXIT__: %s\n", __func__, "Added to MST_SCTP_Q\n");
     return;
@@ -260,7 +298,7 @@ int mst_do_nw_read(mst_nw_peer_t *pmnp)
     mst_buffer_t *mbuf = NULL;
     int rlen = 0;
     int iov_len = 0;
-
+    int rv = 0;
 
     memset(&rmsg, 0, sizeof(rmsg));
     mbuf = mst_alloc_mbuf(D_MST_READ_SIZE, 0, 0 /*fill module info later*/);
@@ -277,24 +315,35 @@ int mst_do_nw_read(mst_nw_peer_t *pmnp)
 
     pmnp->mst_cbuf = mbuf;
 
-    rlen = recvmsg(pmconn->conn_fd, &rmsg, MSG_WAITALL); // change it to NOWAIT later
-    //fprintf(stderr, "Received %d bytes. Decode SCTP here\n", rlen);
-    if (rlen < 0 && rlen != EAGAIN) {
+    //rlen = recvmsg(pmconn->conn_fd, &rmsg, MSG_WAITALL); // change it to NOWAIT later
+    rlen = recvmsg(pmconn->conn_fd, &rmsg, MSG_DONTWAIT); // change it to NOWAIT later
+    if (rlen < 0 && errno != EAGAIN) {
         fprintf(stderr, "Error: %s\n", strerror(errno));
         M_MNP_REF_DOWN_AND_FREE(pmnp);
         return -1;
+    }
+    if ((rlen < 0) && ((EAGAIN == errno) || (EWOULDBLOCK == errno))) {
+        mst_dealloc_mbuf(mbuf);
+        pmnp->mst_cbuf = NULL;
+        return 0;
     }
     if (rlen == 0) {
         M_MNP_REF_DOWN_AND_FREE(pmnp);
         return -1;
     }
     if (rlen > 0) {
-        mst_process_message(pmnp, &rmsg, rlen);
+        //fprintf(stderr, "Received %d bytes. Decode SCTP here\n", rlen);
+        rv = mst_process_message(pmnp, &rmsg, rlen);
     }
 
-    mst_dealloc_mbuf(mbuf);
+    if (rv != 5) {
+        mst_dealloc_mbuf(mbuf);
+    }
+    else {
+        //fprintf(stderr, "SCTP -> mbuf queue\n");
+    }
     pmnp->mst_cbuf = NULL;
-    
+
     return 0;
 }
 
@@ -317,6 +366,8 @@ int mst_setup_tunnel(mst_nw_peer_t *pmnp)
         assert(mnp[tunfd].mst_connection);
         //pthread_mutex_init(&mnp[tunfd].mst_cl, NULL);
         pthread_mutex_init(&mnp[tunfd].ref_lock, NULL);
+        TAILQ_INIT(&mnp[tunfd].mst_wq);
+        pthread_mutex_init(&mnp[tunfd].mst_wql, NULL);
     }
     else {
         memset(mnp[tunfd].mst_connection, 0, sizeof(mst_conn_t));
@@ -331,14 +382,13 @@ int mst_setup_tunnel(mst_nw_peer_t *pmnp)
 
     mnp[tunfd].mst_td = NULL;
     mnp[tunfd].mnp_pair = (int)pmnp;
-    pmnp->mnp_pair = (int)&mnp[tunfd];
     M_MNP_REF_UP(&mnp[tunfd]);
     
-    pthread_mutex_lock(&meb.ev_lock);
-    meb.ev.events = EPOLLIN | EPOLLET;
-    meb.ev.data.ptr = &mnp[tunfd];
-    assert(!epoll_ctl(meb.epfd, EPOLL_CTL_ADD, tunfd, &meb.ev));
-    pthread_mutex_unlock(&meb.ev_lock);
+    mst_epoll_events (&mnp[tunfd], EPOLL_CTL_ADD, (EPOLLIN|EPOLLET));
+    
+    pthread_mutex_lock(&pmnp->ref_lock);
+    pmnp->mnp_pair = (int)&mnp[tunfd];
+    pthread_mutex_unlock(&pmnp->ref_lock);
 
     return rv;
 }
@@ -350,6 +400,7 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
     struct sockaddr_in client;
     socklen_t sk_len = sizeof(client);
     evutil_socket_t cfd;
+    
     //mst_nw_peer_t *pmnp = (mst_nw_peer_t *)arg;
 
     memset(&client, 0, sk_len);
@@ -365,6 +416,8 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
             assert(mnp[cfd].mst_connection);
             //pthread_mutex_init(&mnp[cfd].mst_cl, NULL);
             pthread_mutex_init(&mnp[cfd].ref_lock, NULL);
+            TAILQ_INIT(&mnp[cfd].mst_wq);
+            pthread_mutex_init(&mnp[cfd].mst_wql, NULL);
         }
         else {
             memset(mnp[cfd].mst_connection, 0, sizeof(mst_conn_t));
@@ -404,12 +457,7 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
         evutil_make_socket_nonblocking(cfd);
         evtimer_add(mnp[cfd].mst_td->te, &mnp[cfd].mst_td->timeo);
         
-        pthread_mutex_lock(&meb.ev_lock);
-        meb.ev.events = EPOLLIN | EPOLLET;
-        meb.ev.data.ptr = &mnp[cfd];
-        assert(!epoll_ctl(meb.epfd, EPOLL_CTL_ADD, cfd, &meb.ev));
-        pthread_mutex_unlock(&meb.ev_lock);
-
+        mst_epoll_events (&mnp[cfd], EPOLL_CTL_ADD, (EPOLLIN|EPOLLET));
     }
     else {
         fprintf(stderr, "CFD: %d, %s\n", cfd, strerror(errno));
@@ -462,6 +510,9 @@ int mst_setup_network(void)
         memset(mnp_l[index].mst_connection, 0, sizeof(mst_conn_t));
         mnp_l[index].mst_fd = mst_create_socket();
         mnp_l[index].mst_mt = &mt[index];
+        
+        TAILQ_INIT(&mnp_l[index].mst_wq);
+        pthread_mutex_init(&mnp_l[index].mst_wql, NULL);
 
         //pthread_mutex_init(&mnp_l[index].mst_cl, NULL);
         pthread_mutex_init(&mnp_l[index].ref_lock, NULL);
@@ -479,11 +530,7 @@ int mst_setup_network(void)
 
         //fprintf(stderr, "MNP flags: %0X, %p\n", mnp_l[index].mnp_flags, &mnp_l[index]);
 
-        pthread_mutex_lock(&meb.ev_lock);
-        meb.ev.events = EPOLLIN | EPOLLET;
-        meb.ev.data.ptr = &mnp_l[index];
-        assert(!epoll_ctl(meb.epfd, EPOLL_CTL_ADD, mnp_l[index].mst_fd, &meb.ev));
-        pthread_mutex_unlock(&meb.ev_lock);
+        mst_epoll_events (&mnp_l[index], EPOLL_CTL_ADD, (EPOLLIN|EPOLLET));
     }
 
     return 0;
@@ -507,7 +554,8 @@ mst_do_connect(mst_nw_peer_t *pmnp)
     pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_CONNECTED);
 
     evtimer_add(pmnp->mst_td->te, &pmnp->mst_td->timeo);
-    mst_do_read(pmnp);
+    mst_nw_read(pmnp);
+    
     return 0;
 }
 
@@ -556,33 +604,38 @@ void *mst_nw_thread(void *arg)
     int rv = -1;
     int nfds = -1;
     int index = 0;
+    int epoll_delay = 0;
     mst_nw_peer_t *pmnp = NULL;
 
     while(1) {
 
         //fprintf(stderr, "EPOLL Wait loop\n");
 
-        //nfds = epoll_wait(meb.epfd, meb.evb, meb.ev_cnt, -1);
-        nfds = epoll_wait(meb.epfd, meb.evb, meb.ev_cnt, 1 /*100 ms*/);
+        nfds = epoll_wait(meb.epfd, meb.evb, meb.ev_cnt, epoll_delay /*100 ms*/);
         //fprintf(stderr, "nfds: %d\n", nfds);
-        assert(!(nfds < 0));
+        if (nfds < 0) {
+            //fprintf(stderr, "epoll_wait error: %s\n", strerror(errno));
+        }
+        //assert(!(nfds < 0));
 
         if (0 == nfds) {
             mst_nw_q_t *qelm = NULL;
+            int count = 0;
             //fprintf(stderr, "Epoll wait returned 0. Add back FDs to epoll\n");
 
             pthread_mutex_lock(&mst_eq_lock);
             while(NULL != (qelm = mst_epoll_dequeue_tail())) {
-                pthread_mutex_lock(&meb.ev_lock);
-                meb.ev.events = EPOLLIN | EPOLLET;
-                meb.ev.data.ptr = qelm->pmnp;
-                //fprintf(stderr, "Added %d, %p to epoll\n", qelm->pmnp->mst_fd, qelm->pmnp);
-                rv = epoll_ctl(meb.epfd, EPOLL_CTL_ADD, qelm->pmnp->mst_fd, &meb.ev);
-                if (rv < 0) {
-                    fprintf(stderr, "epoll_ctl error: %s\n", strerror(errno));
-                }
-                pthread_mutex_unlock(&meb.ev_lock);
+                count++;
+                pthread_mutex_lock(&qelm->pmnp->ref_lock);
+                mst_epoll_events (qelm->pmnp, EPOLL_CTL_MOD, (qelm->pmnp->mst_ef | (EPOLLIN | EPOLLET)));
+                pthread_mutex_unlock(&qelm->pmnp->ref_lock);
                 __mst_free(qelm);
+            }
+            if (!count) {
+                epoll_delay = 0;
+            }
+            else {
+                epoll_delay = 0;
             }
             pthread_mutex_unlock(&mst_eq_lock);
         }
@@ -591,13 +644,28 @@ void *mst_nw_thread(void *arg)
 
             if ((meb.evb[index].events & EPOLLERR) ||
                 (meb.evb[index].events & EPOLLHUP) ||
-                !(meb.evb[index].events & EPOLLIN)) {
+                !((meb.evb[index].events & EPOLLIN) || 
+                (meb.evb[index].events & EPOLLOUT))) {
                 fprintf (stderr, "EPOLL ERROR: closing socket\n");
                 M_MNP_REF_DOWN_AND_FREE((mst_nw_peer_t *)&meb.evb[index].data);
                 continue;
             }
 
             pmnp = (mst_nw_peer_t *)meb.evb[index].data.ptr;
+
+            if (meb.evb[index].events & EPOLLOUT) {
+                switch(M_MNP_TYPE(pmnp->mnp_flags)) {
+                    case D_MNP_TYPE_TUN:
+                        mst_tun_write(pmnp);
+                        break;
+                    default:
+                        mst_nw_write(pmnp);
+                }
+            }
+            if (!(meb.evb[index].events & EPOLLIN)) {
+                continue;
+            }
+
             //fprintf(stderr, "EPOLL loop, pmnp: %p, flags: %0X\n", pmnp, pmnp->mnp_flags);
             switch(M_MNP_TYPE(pmnp->mnp_flags)) {
                 case D_MNP_TYPE_LISTEN:
@@ -609,14 +677,14 @@ void *mst_nw_thread(void *arg)
                         mst_do_connect(pmnp);
                     }
                     else {
-                        mst_do_read(pmnp);
+                        mst_nw_read(pmnp);
                     }
                     break;
                 case D_MNP_TYPE_PEER:
-                    mst_do_read(pmnp);
+                    mst_nw_read(pmnp);
                     break;
                 case D_MNP_TYPE_TUN:
-                    mst_tun_do_read(pmnp);
+                    mst_tun_read(pmnp);
                     break;
                 default:
                     fprintf(stderr, "Unknown MNP_TYPE %0X received\n", pmnp->mnp_flags);

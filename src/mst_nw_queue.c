@@ -4,6 +4,8 @@
 #include "mst_timer.h"
 #include "mst_tun.h"
 
+extern mst_event_base_t meb;
+
 TAILQ_HEAD(mst_nw_queue, mst_nw_q) mnq_head;
 pthread_mutex_t mst_q_lock;
 pthread_cond_t mst_q_cond;
@@ -14,6 +16,7 @@ pthread_cond_t mst_tq_cond;
 
 TAILQ_HEAD(mst_epoll_queue, mst_nw_q) epollq_head;
 pthread_mutex_t mst_eq_lock;
+pthread_cond_t mst_eq_cond;
 
 mst_nw_q_t *mst_tun_dequeue_tail(void)
 {
@@ -55,6 +58,19 @@ mst_nw_q_t *mst_epoll_dequeue_tail(void)
     return qelm;
 }
 
+mst_buf_q_t *mst_mbuf_dequeue_tail(mst_nw_peer_t *pmnp)
+{
+    mst_buf_q_t *qelm;
+    pthread_mutex_lock(&pmnp->ref_lock);
+    qelm = TAILQ_LAST(&pmnp->mst_wq, mst_mbuf_q);
+    if (qelm) {
+        TAILQ_REMOVE(&pmnp->mst_wq, qelm, q_field);
+    }
+    pthread_mutex_unlock(&pmnp->ref_lock);
+
+    return qelm;
+}
+
 int mst_insert_tun_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
 {
     mst_nw_q_t *qelm = __mst_malloc(sizeof(mst_nw_q_t));
@@ -72,6 +88,32 @@ int mst_insert_tun_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
 
     return 0;
 }
+
+int mst_insert_mbuf_q(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int len)
+{
+    mst_buf_q_t *qelm;
+
+    if (-1 == pmnp->mst_fd) {
+        return -1;
+    }
+    
+    qelm = __mst_malloc(sizeof(mst_buf_q_t));
+    assert(qelm);
+    memset(qelm, 0, sizeof(mst_buf_q_t));
+    qelm->wlen = len;
+    qelm->mbuf = mbuf;
+
+    //fprintf(stderr, "%s:%d\n", __FILE__, __LINE__);
+
+    pthread_mutex_lock(&pmnp->ref_lock);
+    TAILQ_INSERT_HEAD(&pmnp->mst_wq, qelm, q_field);
+    
+    mst_epoll_events (pmnp, EPOLL_CTL_MOD, (pmnp->mst_ef | EPOLLOUT));
+    pthread_mutex_unlock(&pmnp->ref_lock);
+
+    return 0;
+}
+
 
 int mst_insert_nw_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
 {
@@ -127,7 +169,7 @@ void *mst_loop_tun_queue(void *arg)
         mst_do_tun_read(qelm->pmnp);
         M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
         //fprintf(stderr, "%s:%d: unlock\n", __FILE__, __LINE__);
-
+        
         if (-1 == mst_insert_epoll_queue(qelm)) {
             fprintf(stderr, "Freeing qelm...\n");
             __mst_free(qelm);
@@ -157,6 +199,7 @@ void *mst_loop_nw_queue(void *arg)
         mst_do_nw_read(qelm->pmnp);
         M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
         //fprintf(stderr, "%s:%d: unlock\n", __FILE__, __LINE__);
+        //
 
         if (-1 == mst_insert_epoll_queue(qelm)) {
             fprintf(stderr, "Freeing qelm...\n");
@@ -175,7 +218,7 @@ int mst_init_nw_queue(void)
     pthread_mutex_init(&mst_q_lock, NULL);
     pthread_cond_init(&mst_q_cond, NULL);
 
-    for (index = 0; index < 5; index++) {
+    for (index = 0; index < 1; index++) {
         pthread_create(&pt_nw_queue[index], NULL, mst_loop_nw_queue, NULL);
     }
     return 0;
@@ -190,7 +233,7 @@ int mst_init_tun_queue(void)
     pthread_mutex_init(&mst_tq_lock, NULL);
     pthread_cond_init(&mst_tq_cond, NULL);
 
-    for (index = 0; index < 5; index++) {
+    for (index = 0; index < 1; index++) {
         pthread_create(&pt_tun_queue[index], NULL, mst_loop_tun_queue, NULL);
     }
     return 0;
@@ -200,6 +243,7 @@ int mst_init_epoll_queue(void)
 {
     TAILQ_INIT(&epollq_head);
     pthread_mutex_init(&mst_eq_lock, NULL);
+    pthread_cond_init(&mst_eq_cond, NULL);
     return 0;
 }
  

@@ -44,9 +44,10 @@ typedef struct mst_buffer {
     struct mst_buffer *mfrags_tail;
 } mst_buffer_t;
 
-typedef struct mst_buffer_queue {
+typedef struct mst_buf_q {
     mst_buffer_t *mbuf;
-    mst_buffer_t *mbuf_tail;
-} mst_buffer_queue_t;
+    int wlen;
+    TAILQ_ENTRY(mst_buf_q) q_field;
+} mst_buf_q_t;
 
 #endif //!__MST_MBUF_H__

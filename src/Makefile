@@ -13,13 +13,13 @@ MST_FLAGS=-D_EVENT_HAVE_PTHREADS
 MST_FLAGS+=-D__DEV_TEST__
 
 TARGET=${ROOTDIR}/bin/mstunnel
-CFLAGS=-g -O2 -Wall ${MST_FLAGS}
+CFLAGS=-g -pg -O2 -Wall ${MST_FLAGS}
 CFLAGS+=-I/usr/include/glib-2.0/
 CFLAGS+=-I/usr/lib/glib-2.0/include/
 CFLAGS+=-I${INC}
 
 all: ${TARGET}
-	gcc -o ${TARGET} ${BUILDDIR}/*.o ${LIBS}
+	gcc -g -pg -o ${TARGET} ${BUILDDIR}/*.o ${LIBS}
 
 build:
 	@mkdir -p ${ROOTDIR}/build

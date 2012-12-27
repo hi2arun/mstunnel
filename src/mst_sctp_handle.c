@@ -2,6 +2,7 @@
 #include "mstunnel.h"
 #include "mst_network.h"
 #include "memmgmt.h"
+#include "mst_nw_queue.h"
 
 int
 mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
@@ -132,8 +133,11 @@ int
 mst_process_data(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     //fprintf(stderr, "ENTRY: %s()\n", __func__);
-    mst_do_tunn_write(pmnp, rlen);
+    mst_do_tun_write((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
+    
+    //mst_insert_mbuf_q((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
     return 0;
+    //return 5;
 }
 
 int 
@@ -172,6 +176,8 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     struct cmsghdr *scmsg = NULL;
     sctp_cmsg_data_t *rdata = NULL;
+    int rv = 0;
+    int nm = 0;
 
     if (!rlen || (rlen < 0)) {
         fprintf(stderr, "No data. Nothing to dump\n");
@@ -181,14 +187,19 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 
     if (MSG_NOTIFICATION & rmsg->msg_flags) {
         mst_process_notification(pmnp, rmsg, rlen);
+        nm = 1;
     }
     else {
-        mst_process_data(pmnp, rmsg, rlen);
+        rv = mst_process_data(pmnp, rmsg, rlen);
     }
 
     for(scmsg = CMSG_FIRSTHDR(rmsg); scmsg != NULL; scmsg = CMSG_NXTHDR(rmsg, scmsg)) {
         rdata = (sctp_cmsg_data_t *)CMSG_DATA(scmsg);
         mst_dump_ctrlmsg(scmsg->cmsg_type, rdata);
+    }
+
+    if (!nm) {
+        return rv;
     }
 
     return 0;
@@ -243,7 +254,8 @@ mst_link_status(mst_nw_peer_t *pmnp)
     mst_tuple->nw_parms.link_nice = (link_status.sstat_primary.spinfo_srtt)?((float)1.0/link_status.sstat_primary.spinfo_srtt):1.0;
     mst_tuple->nw_parms.xmit_max_pkts = (int)(mst_tuple->nw_parms.link_nice * mst_tuple->nw_parms.xmit_factor);
 
-    mst_tuple->nw_parms.xmit_curr_stream = (mst_tuple->nw_parms.xmit_curr_stream + 1) % mst_tuple->nw_parms.num_ostreams;
+    //mst_tuple->nw_parms.xmit_curr_stream = (mst_tuple->nw_parms.xmit_curr_stream + 1) % mst_tuple->nw_parms.num_ostreams;
+    mst_tuple->nw_parms.xmit_curr_stream = 0;
 
     //fprintf(stderr, "Link nice: %f, xmit_max_pkts: %d\n", mst_tuple->nw_parms.link_nice, mst_tuple->nw_parms.xmit_max_pkts);
     

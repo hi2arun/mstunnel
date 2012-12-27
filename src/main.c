@@ -132,6 +132,14 @@ int mst_config_init(void)
     return 0;
 }
 
+void sig_handler(int signo)
+{
+    fprintf(stderr, "Received signal %d\n", signo);
+
+    exit(EXIT_SUCCESS);
+    return;
+}
+
 int main(int argc, char **argv)
 {
     int opt;
@@ -148,6 +156,10 @@ int main(int argc, char **argv)
                 exit(EXIT_FAILURE);
         }
     }
+
+    signal(SIGTERM, sig_handler);
+    signal(SIGINT, sig_handler);
+
     mst_mm_init();
 
     mst_config_init();
