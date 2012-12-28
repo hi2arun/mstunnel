@@ -18,6 +18,12 @@ TAILQ_HEAD(mst_epoll_queue, mst_nw_q) epollq_head;
 pthread_mutex_t mst_eq_lock;
 pthread_cond_t mst_eq_cond;
 
+struct timespec cond_wait_ts;
+#define D_COND_WAIT_TO 60
+
+atomic_t tun_in, tun_out;
+atomic_t nw_in, nw_out;
+
 mst_nw_q_t *mst_tun_dequeue_tail(void)
 {
     mst_nw_q_t *qelm;
@@ -51,10 +57,13 @@ mst_nw_q_t *mst_nw_dequeue_tail(void)
 mst_nw_q_t *mst_epoll_dequeue_tail(void)
 {
     mst_nw_q_t *qelm;
+    pthread_mutex_lock(&mst_eq_lock);
     qelm = TAILQ_LAST(&epollq_head, mst_epoll_queue);
     if (qelm) {
         TAILQ_REMOVE(&epollq_head, qelm, q_field);
     }
+    pthread_mutex_unlock(&mst_eq_lock);
+    
     return qelm;
 }
 
@@ -85,6 +94,7 @@ int mst_insert_tun_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
     pthread_cond_signal(&mst_tq_cond);
     pthread_mutex_unlock(&mst_tq_lock);
     //fprintf(stderr, "Release TQ lock\n");
+    atomic_inc(&tun_in);
 
     return 0;
 }
@@ -129,6 +139,8 @@ int mst_insert_nw_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
     pthread_cond_signal(&mst_q_cond);
     pthread_mutex_unlock(&mst_q_lock);
     //fprintf(stderr, "Release Q lock\n");
+    //
+    atomic_inc(&nw_in);
 
     return 0;
 }
@@ -155,25 +167,23 @@ void *mst_loop_tun_queue(void *arg)
     while (1) {
         qelm = mst_tun_dequeue_tail();
         if (!qelm) {
-            //fprintf(stderr, "Waiting for Tqelm\n");
+            cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_TO;
+            cond_wait_ts.tv_nsec = 0;
             pthread_mutex_lock(&mst_tq_lock);
-            //fprintf(stderr, "Waiting for Tqelm - condWAIT\n");
-            pthread_cond_wait(&mst_tq_cond, &mst_tq_lock);
+            //pthread_cond_wait(&mst_tq_cond, &mst_tq_lock);
+            pthread_cond_timedwait(&mst_tq_cond, &mst_tq_lock, &cond_wait_ts);
             pthread_mutex_unlock(&mst_tq_lock);
             continue;
         }
 
-        //fprintf(stderr, "Dequeued %p\n", qelm);
-
-        //fprintf(stderr, "%s:%d: lock\n", __FILE__, __LINE__);
         mst_do_tun_read(qelm->pmnp);
         M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
-        //fprintf(stderr, "%s:%d: unlock\n", __FILE__, __LINE__);
         
         if (-1 == mst_insert_epoll_queue(qelm)) {
-            fprintf(stderr, "Freeing qelm...\n");
+            fprintf(stderr, "[TUN] Freeing qelm...\n");
             __mst_free(qelm);
         }
+        atomic_inc(&tun_out);
     }
 
 }
@@ -185,28 +195,24 @@ void *mst_loop_nw_queue(void *arg)
     while (1) {
         qelm = mst_nw_dequeue_tail();
         if (!qelm) {
-            //fprintf(stderr, "Waiting for qelm\n");
+            cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_TO;
+            cond_wait_ts.tv_nsec = 0;
             pthread_mutex_lock(&mst_q_lock);
-            //fprintf(stderr, "Waiting for qelm - condWAIT\n");
-            pthread_cond_wait(&mst_q_cond, &mst_q_lock);
+            //pthread_cond_wait(&mst_q_cond, &mst_q_lock);
+            pthread_cond_timedwait(&mst_q_cond, &mst_q_lock, &cond_wait_ts);
             pthread_mutex_unlock(&mst_q_lock);
             continue;
         }
 
-        //fprintf(stderr, "Dequeued %p\n", qelm);
-
-        //fprintf(stderr, "%s:%d: lock\n", __FILE__, __LINE__);
         mst_do_nw_read(qelm->pmnp);
         M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
-        //fprintf(stderr, "%s:%d: unlock\n", __FILE__, __LINE__);
-        //
 
         if (-1 == mst_insert_epoll_queue(qelm)) {
-            fprintf(stderr, "Freeing qelm...\n");
+            fprintf(stderr, "[NW] Freeing qelm...\n");
             __mst_free(qelm);
         }
+        atomic_inc(&nw_out);
     }
-
 }
 
 int mst_init_nw_queue(void)

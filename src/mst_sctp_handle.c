@@ -133,11 +133,11 @@ int
 mst_process_data(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     //fprintf(stderr, "ENTRY: %s()\n", __func__);
-    mst_do_tun_write((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
+    //mst_do_tun_write((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
     
-    //mst_insert_mbuf_q((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
-    return 0;
-    //return 5;
+    mst_insert_mbuf_q((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
+   //return 0;
+   return 5;
 }
 
 int 

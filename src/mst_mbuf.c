@@ -209,6 +209,8 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
     int new_slot = -1;
     int frags_count = 0;
 
+    //fprintf(stderr, "%s() __ENTRY__\n", __func__);
+
     if (!size) {
         return NULL;
     }

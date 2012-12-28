@@ -16,6 +16,9 @@
 
 mst_opts_t mst_global_opts; 
 
+extern atomic_t tun_in, tun_out;
+extern atomic_t nw_in, nw_out;
+
 void mst_log_event_cb(int severity, const char *msg);
 
 void mst_log_event_cb(int severity, const char *msg)
@@ -135,6 +138,8 @@ int mst_config_init(void)
 void sig_handler(int signo)
 {
     fprintf(stderr, "Received signal %d\n", signo);
+    fprintf(stderr, "NwIN: %d, NwOUT: %d\n", atomic_read(&nw_in), atomic_read(&nw_out));
+    fprintf(stderr, "TunIN: %d, TunOUT: %d\n", atomic_read(&tun_in), atomic_read(&tun_out));
 
     exit(EXIT_SUCCESS);
     return;
