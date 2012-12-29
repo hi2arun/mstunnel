@@ -123,6 +123,7 @@ typedef struct mst_conn {
     //mst_buffer_queue_t write_queue;
     //int ref_cnt;
     int event_flags;
+    int curr_state;
 } mst_conn_t;
 
 typedef struct mst_event_base {
@@ -153,10 +154,8 @@ typedef struct mst_event_base {
 //
 
 // MNP Types
-#define D_MNP_TYPE_LISTEN 0x1
-#define D_MNP_TYPE_CONNECT 0x2
-#define D_MNP_TYPE_PEER 0x4
-#define D_MNP_TYPE_TUN 0x8
+#define D_MNP_TYPE_TUN 0x1
+#define D_MNP_TYPE_NW 0x2
 
 #define M_MNP_TYPE(x) (((x) & 0xFFFF0000) >> 16)
 #define M_MNP_SET_TYPE(x, state) (((x) & 0x0000FFFF) | (state << 16))
@@ -222,6 +221,7 @@ typedef struct mst_timer {
 #define mst_wql mst_connection->wq_lock
 #define mst_rc mst_connection->ref_cnt
 #define mst_ef mst_connection->event_flags
+#define mst_curr mst_connection->curr_state
 
 #define mst_ec mst_config.ev_cfg
 #define mst_ses mst_config.sctp_ev_subsc
