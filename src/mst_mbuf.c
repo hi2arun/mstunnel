@@ -63,7 +63,7 @@ void mst_free_iov(struct iovec *iov)
 }
 
 struct iovec *
-mst_mbuf_rework_iov(mst_buffer_t *mbuf, int rlen, int *iov_len)
+mst_mbuf_rework_iov(mst_buffer_t *mbuf, int rlen, int *iov_len, int id_flag)
 {
     int tot_iovs = mbuf->iov_len;
     struct iovec *iov = mbuf->iov;
@@ -84,7 +84,7 @@ mst_mbuf_rework_iov(mst_buffer_t *mbuf, int rlen, int *iov_len)
     assert(tot_iovs >= needed_iovs);
 
     // Now return excess mbufs to pool
-    iov[needed_iovs - 1].iov_len = (rlen % buf_len);
+    iov[id_flag + needed_iovs - 1].iov_len = (rlen % buf_len);
     //fprintf(stderr, "Needed iovs: %d, rlen: %d, buf_len: %d\n", needed_iovs, rlen, buf_len);
 
     *iov_len = needed_iovs;
@@ -92,25 +92,34 @@ mst_mbuf_rework_iov(mst_buffer_t *mbuf, int rlen, int *iov_len)
 }
 
 struct iovec *
-mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len) 
+mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len, int id_flag) 
 {
     struct iovec *iov;
     int index = 0;
     mst_buffer_t *mbuf_temp;
 
-    //iov = (struct iovec*)__mst_malloc(sizeof(struct iovec) * (mbuf->frags_count + 1));
-    mbuf->iov = (struct iovec*)__mst_malloc(sizeof(struct iovec) * (mbuf->frags_count + 1));
-    //if (!iov) {
+    assert((id_flag != 0) || (id_flag != 1));
+
+    mbuf->iov = (struct iovec*)__mst_malloc(sizeof(struct iovec) * (mbuf->frags_count + id_flag /*SCTP Code*/ + 1 /*first buffer*/));
     if (!mbuf->iov) {
         return NULL;
     }
 
     iov = mbuf->iov;
 
-    iov[0].iov_len = mbuf->buf_len;
-    iov[0].iov_base = mbuf->buffer;
+    if (id_flag) {
+        iov[0].iov_len = 4 /*size of int - NW-Identifier*/ ;
+        iov[0].iov_base = 0 /* To be initialized by callee */;
 
-    for(mbuf_temp = mbuf->mfrags, index = 1; mbuf->frags_count && mbuf_temp; mbuf_temp = mbuf_temp->__next, index++) {
+        iov[1].iov_len = mbuf->buf_len;
+        iov[1].iov_base = mbuf->buffer;
+    }
+    else {
+        iov[0].iov_len = mbuf->buf_len;
+        iov[0].iov_base = mbuf->buffer;
+    }
+
+    for(mbuf_temp = mbuf->mfrags, index = (id_flag + 1); (mbuf->frags_count + 1) && mbuf_temp; mbuf_temp = mbuf_temp->__next, index++) {
 
         iov[index].iov_len = mbuf_temp->buf_len;
         iov[index].iov_base = mbuf_temp->buffer;
@@ -119,7 +128,7 @@ mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len)
 
     //fprintf(stderr, "Frags_count: %d, index: %d\n", mbuf->frags_count, index);
 
-    assert(index == (mbuf->frags_count + 1));
+    assert(index == (mbuf->frags_count + id_flag + 1));
 
     mbuf->iov_len = index;
 

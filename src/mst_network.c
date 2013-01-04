@@ -15,6 +15,9 @@ extern pthread_cond_t mst_eq_cond;
 atomic_t tun_reads, tun_writes;
 atomic_t nw_reads, nw_writes;
 
+#define D_TUN_READ 0
+#define D_NW_READ 1
+
 inline void mst_epoll_events(mst_nw_peer_t *pmnp, int ev_cmd, int events)
 {
     struct epoll_event ev;
@@ -128,14 +131,14 @@ int mst_do_tun_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
 
     assert(rlen > 0);
 
-    iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len);
+    iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len, D_NW_READ);
     assert(iov && iov_len);
-    //
 
     //fprintf(stderr, "%s:%d \n", __FILE__, __LINE__);
-    rv = writev(pmnp->mst_fd, iov, iov_len);
+    // iov[0] is for nw_header. Data is available from iov[1]
+    rv = writev(pmnp->mst_fd, &iov[1], iov_len);
     if ((rv < 0) || (0 == rv)) {
-        fprintf(stderr, "WriteV error: %s - %d bytes\n", strerror(errno), rlen);
+        fprintf(stderr, "WriteV error: %s - %d bytes, iov_len: %d\n", strerror(errno), rlen, iov_len);
     }
     else {
         atomic_inc(&tun_writes);
@@ -157,11 +160,13 @@ tun_read_again:
     //fprintf(stderr, "%s(): __ENTRY__\n", __func__);
     mbuf = mst_alloc_mbuf(D_MST_READ_SIZE, 0, 0 /*fill module info later*/);
     assert(mbuf);
-    iov = mst_mbuf_to_iov(mbuf, &iov_len);
+    // D_NW_READ - Letz allocate room for nw_header in iov[0]. Will be populated by mst_do_nw_write
+    iov = mst_mbuf_to_iov(mbuf, &iov_len, D_NW_READ);
 
     pmnp->mst_cbuf = mbuf;
     
-    rlen = readv(pmnp->mst_fd, iov, iov_len); // change it to NOWAIT later
+    // iov[0] contains nw header. Tun read shud populate data from iov[1]
+    rlen = readv(pmnp->mst_fd, &iov[1], (iov_len - 1)); // change it to NOWAIT later
     if ((rlen < 0) && ((EINTR != errno) && (errno != EAGAIN))) {
         fprintf(stderr, "Read error - 1: %s\n", strerror(errno));
         M_MNP_REF_DOWN_AND_FREE(pmnp);
@@ -198,6 +203,8 @@ tun_read_again:
     return 0;
 }
 
+#define D_TEST_NW_ID htonl(0xDEADBEAF)
+
 int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
 {
     int rv = -1;
@@ -208,16 +215,20 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
     mst_csi_t *mt = NULL;
     struct iovec *iov = NULL;
     int iov_len = 0;
+    mst_nw_header_t nw_header = {.nw_id = D_TEST_NW_ID, .nw_version = htonl(D_NW_VERSION_1_0)};
     
     mt = pmnp->mst_mt;
     memset(&omsg, 0, sizeof(omsg));
 
-    iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len);
+    iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len, D_NW_READ);
+
+    iov[0].iov_base = &nw_header;
+    iov[0].iov_len = sizeof(mst_nw_header_t);
 
     assert(iov && iov_len);
 
     omsg.msg_iov = iov;
-    omsg.msg_iovlen = iov_len;
+    omsg.msg_iovlen = (iov_len + 1);
     omsg.msg_control = ctrlmsg;
     omsg.msg_controllen = sizeof(ctrlmsg);
     omsg.msg_flags = 0;
@@ -236,7 +247,6 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
     sinfo->sinfo_stream = mt->nw_parms.xmit_curr_stream;
     sinfo->sinfo_flags = 0;
 
-    //rv = sendmsg(pmnp->mst_fd, &omsg, MSG_WAITALL);
     rv = sendmsg(pmnp->mst_fd, &omsg, MSG_DONTWAIT);
     if ((rv < 0) && (EAGAIN == errno)) {
         return EAGAIN;
@@ -341,6 +351,8 @@ int mst_do_nw_read(mst_nw_peer_t *pmnp)
     int rlen = 0;
     int iov_len = 0;
     int rv = 0;
+    mst_nw_header_t *nw_header;
+    //int rx_nw_id = 0;
 
 read_again:
     memset(&rmsg, 0, sizeof(rmsg));
@@ -349,7 +361,15 @@ read_again:
 
     //fprintf(stderr, "%s(): pmnp: %p, fd: %d\n", __func__, pmnp, pmnp->mst_fd);
 
-    iov = mst_mbuf_to_iov(mbuf, &iov_len);
+    nw_header = (mst_nw_header_t *) __mst_malloc(sizeof(mst_nw_header_t));
+    assert(nw_header);
+
+    memset(nw_header, 0, sizeof(mst_nw_header_t));
+
+    iov = mst_mbuf_to_iov(mbuf, &iov_len, D_NW_READ);
+
+    iov[0].iov_base = nw_header;
+    iov[0].iov_len = sizeof(mst_nw_header_t);
 
     rmsg.msg_iov = iov;
     rmsg.msg_iovlen = iov_len;
@@ -374,12 +394,13 @@ read_again:
         return -1;
     }
     if (rlen > 0) {
-        //fprintf(stderr, "Received %d bytes. Decode SCTP here\n", rlen);
+        //fprintf(stderr, "Received %d bytes. Decode SCTP here.\n", rlen);
         rv = mst_process_message(pmnp, &rmsg, rlen);
         atomic_inc(&nw_reads);
     }
 
     if (rv != 5) {
+        __mst_free(nw_header);
         mst_dealloc_mbuf(mbuf);
     }
     else {
@@ -402,14 +423,12 @@ int mst_setup_tunnel(mst_nw_peer_t *pmnp)
     fprintf(stderr, "New dev name: %s\n", dev_name);
 
     tunfd = mst_tun_open(dev_name);
-    //pmnp->mst_tfd = mst_tun_open(dev_name);
     assert(tunfd > 0);
     evutil_make_socket_nonblocking(tunfd);
     
     if(!mnp[tunfd].mst_connection) {
         mnp[tunfd].mst_connection = (mst_conn_t *) __mst_malloc(sizeof(mst_conn_t));
         assert(mnp[tunfd].mst_connection);
-        //pthread_mutex_init(&mnp[tunfd].mst_cl, NULL);
         pthread_mutex_init(&mnp[tunfd].ref_lock, NULL);
         TAILQ_INIT(&mnp[tunfd].mst_wq);
         pthread_mutex_init(&mnp[tunfd].mst_wql, NULL);
@@ -442,7 +461,6 @@ int mst_setup_tunnel(mst_nw_peer_t *pmnp)
     return rv;
 }
 
-//void mst_do_accept(evutil_socket_t fd, short event, void *arg)
 int mst_do_accept(mst_nw_peer_t *pmnp)
 {
     int rv = -1;

@@ -69,7 +69,6 @@ typedef struct mst_nw_parms {
     //TODO: Extend this to have all conn/tunn specific config and placeholders
 } mst_nw_parms_t;
 
-
 // client-server info
 typedef struct mst_clisvr_info {
     // multiple Interfaces/links to one/multiple servers
@@ -120,8 +119,6 @@ typedef struct mst_conn {
     struct iovec *iov;
     struct mst_mbuf_q mbuf_wq; // write_queue
     pthread_mutex_t wq_lock;
-    //mst_buffer_queue_t write_queue;
-    //int ref_cnt;
     int event_flags;
     int curr_state;
 } mst_conn_t;

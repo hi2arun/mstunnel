@@ -1,13 +1,14 @@
 #ifndef __MST_NETWORK_H__
 #define __MST_NETWORK_H__
 
-#if 0 // Use native sctp_cmsg_data_t instead of this
-typedef union {
-    struct sctp_initmsg init;
-    struct sctp_sndrcvinfo sndrcvinfo;
-} _sctp_cmsg_data_t;
-#endif
+// MSB(16 bytes): Major version
+// LSB(16 bytes): Minor version
+#define D_NW_VERSION_1_0 0x00010000
 
+typedef struct mst_nw_header {
+    int nw_id;
+    int nw_version;
+} __attribute__((__packed__)) mst_nw_header_t;
 
 extern int mst_setup_network(void);
 extern int mst_loop_network(void);

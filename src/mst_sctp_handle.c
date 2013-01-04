@@ -4,17 +4,49 @@
 #include "memmgmt.h"
 #include "mst_nw_queue.h"
 
+#define D_CTRL_MSG_LEN 256 // 256 bytes is good enuf to hold control message
+
 int
 mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
     struct iovec *msg_iov = NULL;
     union sctp_notification *snp = NULL;
     struct sctp_assoc_change *sac;
+    char ctrl_msg[D_CTRL_MSG_LEN];
+    int mc_len = 0;
+    int mc_tlen = 0;
+    int index = 0;
 
     //fprintf(stderr, "ENTRY: %s()\n", __func__);
-    msg_iov = rmsg->msg_iov;
+    assert(rlen <= D_CTRL_MSG_LEN);
+
+    memset(ctrl_msg, 0, sizeof(ctrl_msg));
+    fprintf(stderr, "Ctrl msg len: %d\n", sizeof(ctrl_msg));
+
+    for (index = 0; index < rmsg->msg_iovlen; index++) {
+        msg_iov = &(rmsg->msg_iov[index]);
+
+        if ((mc_tlen + msg_iov->iov_len) < rlen) {
+            mc_len = msg_iov->iov_len;
+        }
+        else {
+            mc_len = (rlen - mc_tlen);
+        }
+
+        memcpy((ctrl_msg + mc_tlen), msg_iov->iov_base, mc_len);
+        mc_tlen += mc_len;
+        
+        fprintf(stderr, "Copied: %d bytes\n", mc_len);
+
+        if (mc_tlen >= rlen) {
+            fprintf(stderr, "Total Copied: %d bytes\n", mc_tlen);
+            break;
+        }
+    }
+
     // Notification should be in the first vector
-    snp = (union sctp_notification *)msg_iov->iov_base;
+    //snp = (union sctp_notification *)msg_iov->iov_base;
+    snp = (union sctp_notification *)ctrl_msg;
     sac = &snp->sn_assoc_change;
 
     switch(sac->sac_state) {
@@ -36,7 +68,7 @@ mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
             // Cant Start ASSOC
         case 4:
         default:
-            //fprintf(stderr, "Cleanup mnp: assoc_change to %d\n", sac->sac_state);
+            fprintf(stderr, "Cleanup mnp: assoc_change to %d\n", sac->sac_state);
             mst_cleanup_mnp(pmnp);
     }
     
@@ -178,6 +210,7 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
     sctp_cmsg_data_t *rdata = NULL;
     int rv = 0;
     int nm = 0;
+    mst_nw_header_t *nw_header = NULL;
 
     if (!rlen || (rlen < 0)) {
         fprintf(stderr, "No data. Nothing to dump\n");
@@ -190,6 +223,10 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
         nm = 1;
     }
     else {
+        nw_header = rmsg->msg_iov[0].iov_base;
+        //fprintf(stderr, "NW ID: 0x%x, version: 0x%x\n", ntohl(nw_header->nw_id), ntohl(nw_header->nw_version));
+        // TODO: Validate/add nw_id. If failed, process error
+        __mst_free(nw_header);
         rv = mst_process_data(pmnp, rmsg, rlen);
     }
 
