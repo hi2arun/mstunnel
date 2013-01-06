@@ -173,6 +173,7 @@ typedef struct mst_nw_peer {
     int mnp_flags;
     mst_conn_t *mst_connection;
     int mnp_pair; //holds a pointer to its pair FD. conn <-> tunn pair
+    int nw_id;
     mst_config_t *mst_config;
     pthread_mutex_t ref_lock;
     atomic_t ref_cnt;

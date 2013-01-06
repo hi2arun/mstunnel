@@ -130,7 +130,9 @@ static inline void rb_set_color(struct rb_node *rb, int color)
 #define offsetof(type,member) ((char *)(&((type *)0)->member) - (char *)((type *)0))
 #endif
 
+#ifndef container_of
 #define container_of(ptr, type, member) ((type *)((char *)(ptr) - offsetof(type,member)))
+#endif
 
 
 //#define RB_ROOT	(struct rb_root) { NULL, }
