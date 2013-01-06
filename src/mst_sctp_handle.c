@@ -53,7 +53,7 @@ mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
         // Comm UP
         case 0:
             //fprintf(stderr, "COMM_UP - Setting up tunnel\n");
-            mst_setup_tunnel(pmnp);
+            //mst_setup_tunnel(pmnp);
             break;
         // Comm RESTART
         case 2:
@@ -226,8 +226,18 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
         nw_header = rmsg->msg_iov[0].iov_base;
         //fprintf(stderr, "NW ID: 0x%x, version: 0x%x\n", ntohl(nw_header->nw_id), ntohl(nw_header->nw_version));
         // TODO: Validate/add nw_id. If failed, process error
-        __mst_free(nw_header);
-        rv = mst_process_data(pmnp, rmsg, rlen);
+        if (rlen > sizeof(mst_nw_header_t)) {
+            __mst_free(nw_header);
+            rv = mst_process_data(pmnp, rmsg, rlen);
+        }
+        else {
+            fprintf(stderr, "NW control message is received\n");
+            pmnp->mnp_flags = M_MNP_UNSET_STATE(pmnp->mnp_flags, D_MNP_STATE_CONNECTED);
+            pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_ESTABLISHED);
+            pmnp->mst_td->timeo.tv_sec = 1;
+            pmnp->mst_td->timeo.tv_usec = 0;
+            mst_setup_tunnel(pmnp);
+        }
     }
 
     for(scmsg = CMSG_FIRSTHDR(rmsg); scmsg != NULL; scmsg = CMSG_NXTHDR(rmsg, scmsg)) {
@@ -264,6 +274,12 @@ mst_link_status(mst_nw_peer_t *pmnp)
     struct sctp_status link_status;
     mst_csi_t *mst_tuple;
     socklen_t optlen = sizeof(struct sctp_status);
+
+    if (D_MNP_STATE_ESTABLISHED != M_MNP_STATE(pmnp->mnp_flags)) {
+        fprintf(stderr, "pmnp[%p] state is not D_MNP_STATE_ESTABLISHED\n", pmnp);
+        M_MNP_REF_DOWN_AND_FREE(pmnp);
+        return -1;
+    }
 
     M_MNP_REF_UP(pmnp);
 

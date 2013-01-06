@@ -161,11 +161,13 @@ typedef struct mst_event_base {
 #define D_MNP_STATE_LISTEN 0x1
 #define D_MNP_STATE_CONNECTING 0x2
 #define D_MNP_STATE_CONNECTED 0x4
-#define D_MNP_STATE_TUNNEL 0x8
-#define D_MNP_STATE_ERROR 0x10
+#define D_MNP_STATE_ESTABLISHED 0x8
+#define D_MNP_STATE_TUNNEL 0x10
+#define D_MNP_STATE_ERROR 0x20
 
 #define M_MNP_STATE(x) ((x) & 0x0000FFFF)
 #define M_MNP_SET_STATE(x, state) (((x) & 0xFFFF0000) | state)
+#define M_MNP_UNSET_STATE(x, state) (((x) & 0xFFFFFFFF) & ~state)
 
 typedef struct mst_nw_peer {
     int mnp_flags;

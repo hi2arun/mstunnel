@@ -149,6 +149,26 @@ int mst_do_tun_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
     return 0;
 }
 
+int mst_send_nw_init(mst_nw_peer_t *pmnp)
+{
+    struct iovec *iov = NULL;
+    mst_buffer_t *mbuf = NULL;
+    int iov_len = 0;
+
+    mbuf = mst_alloc_mbuf(32 ,0, 0);
+    assert(mbuf);
+
+    iov = mst_mbuf_to_iov(mbuf, &iov_len, D_NW_READ);
+    assert(iov);
+
+    mst_do_nw_write(pmnp, mbuf, 0);
+    fprintf(stderr, "%s(): Sent init message\n", __func__);
+
+    mst_dealloc_mbuf(mbuf);
+
+    return 0;
+}
+
 int mst_do_tun_read(mst_nw_peer_t *pmnp)
 {
     struct iovec *iov = NULL;
@@ -247,7 +267,7 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
     sinfo->sinfo_stream = mt->nw_parms.xmit_curr_stream;
     sinfo->sinfo_flags = 0;
 
-    rv = sendmsg(pmnp->mst_fd, &omsg, MSG_DONTWAIT);
+    rv = sendmsg(pmnp->mst_fd, &omsg, (rlen)?MSG_DONTWAIT:MSG_WAITALL);
     if ((rv < 0) && (EAGAIN == errno)) {
         return EAGAIN;
         //fprintf(stderr, "Sendmsg --> EAGAIN\n");
@@ -508,7 +528,7 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
             assert(mnp[cfd].mst_td);
         }
         mnp[cfd].mst_td->type = MST_MNP;
-        mnp[cfd].mst_td->timeo.tv_sec = 1;
+        mnp[cfd].mst_td->timeo.tv_sec = 5;
         mnp[cfd].mst_td->timeo.tv_usec = 0;
         mnp[cfd].mst_td->te = evtimer_new(meb.Teb, mst_timer, mnp[cfd].mst_td);
         mnp[cfd].mst_td->data = &mnp[cfd];
@@ -613,7 +633,7 @@ mst_do_connect(mst_nw_peer_t *pmnp)
     pmnp->mst_td = (mst_timer_data_t *)__mst_malloc(sizeof(mst_timer_data_t));
     assert(pmnp->mst_td);
     pmnp->mst_td->type = MST_MNP;
-    pmnp->mst_td->timeo.tv_sec = 1;
+    pmnp->mst_td->timeo.tv_sec = 5;
     pmnp->mst_td->timeo.tv_usec = 0;
     pmnp->mst_td->te = evtimer_new(meb.Teb, mst_timer, pmnp->mst_td);
     pmnp->mst_td->data = pmnp;
@@ -621,9 +641,19 @@ mst_do_connect(mst_nw_peer_t *pmnp)
     M_MNP_REF_UP(pmnp);
     fprintf(stderr, "%s(): pmnp: %p, fd: %d\n", __func__, pmnp, pmnp->mst_fd);
 
+    pmnp->mnp_flags = M_MNP_UNSET_STATE(pmnp->mnp_flags, D_MNP_STATE_CONNECTING);
     pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_CONNECTED);
 
     evtimer_add(pmnp->mst_td->te, &pmnp->mst_td->timeo);
+    
+    mst_send_nw_init(pmnp);
+
+    pmnp->mnp_flags = M_MNP_UNSET_STATE(pmnp->mnp_flags, D_MNP_STATE_CONNECTED);
+    pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_ESTABLISHED);
+    pmnp->mst_td->timeo.tv_sec = 1;
+    pmnp->mst_td->timeo.tv_usec = 0;
+    mst_setup_tunnel(pmnp);
+
     mst_nw_read(pmnp);
     
     return 0;
@@ -765,6 +795,7 @@ void *mst_nw_thread(void *arg)
                     mst_do_connect(pmnp);
                     break;
                 case D_MNP_STATE_CONNECTED:
+                case D_MNP_STATE_ESTABLISHED:
                     mst_nw_read(pmnp);
                     break;
                 case D_MNP_STATE_TUNNEL:
