@@ -1,6 +1,8 @@
 #ifndef __MST_NETWORK_H__
 #define __MST_NETWORK_H__
 
+#include "ds/mst_list.h"
+
 // MSB(16 bytes): Major version
 // LSB(16 bytes): Minor version
 #define D_NW_VERSION_1_0 0x00010000
@@ -10,7 +12,10 @@ typedef struct mst_nw_header {
     int nw_version;
 } __attribute__((__packed__)) mst_nw_header_t;
 
-
+typedef struct mst_nw_conn {
+    struct hlist_node hnode;
+    int nw_id;
+} mst_nw_conn_t;
 
 extern int mst_setup_network(void);
 extern int mst_loop_network(void);

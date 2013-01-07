@@ -16,6 +16,7 @@ TARGET=${ROOTDIR}/bin/mstunnel
 CFLAGS=-g -pg -O2 -Wall ${MST_FLAGS}
 CFLAGS+=-I/usr/include/glib-2.0/
 CFLAGS+=-I/usr/lib/glib-2.0/include/
+CFLAGS+=-I${ROOTDIR}/lib
 CFLAGS+=-I${INC}
 
 all: ${TARGET}

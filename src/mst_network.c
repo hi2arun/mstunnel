@@ -704,7 +704,7 @@ void *mst_nw_thread(void *arg)
     int rv = -1;
     int nfds = -1;
     int index = 0;
-    int epoll_delay = 0;
+    int epoll_delay = 1;
     mst_nw_peer_t *pmnp = NULL;
 
     while(1) {
@@ -733,12 +733,6 @@ void *mst_nw_thread(void *arg)
                 __mst_free(qelm);
             }
             if (!count) {
-                //epoll_delay ^= 1;
-                epoll_delay ^= epoll_delay;
-            }
-            else {
-                //fprintf(stderr, "Added %d fds to epoll\n", count);
-                epoll_delay = 0;
             }
         }
 
