@@ -1,4 +1,3 @@
-#include <glib.h>
 #include "mstunnel.h"
 #include "mst_network.h"
 #include "memmgmt.h"
@@ -304,10 +303,10 @@ mst_link_status(mst_nw_peer_t *pmnp)
 
     mst_print_sctp_paddrinfo(&link_status.sstat_primary);
 
-    mst_tuple->nw_parms.link_nice = (link_status.sstat_primary.spinfo_srtt)?((float)1.0/link_status.sstat_primary.spinfo_srtt):1.0;
-    mst_tuple->nw_parms.xmit_max_pkts = (int)(mst_tuple->nw_parms.link_nice * mst_tuple->nw_parms.xmit_factor);
+    pmnp->mst_nwp.link_nice = (link_status.sstat_primary.spinfo_srtt)?((float)1.0/link_status.sstat_primary.spinfo_srtt):1.0;
+    pmnp->mst_nwp.xmit_max_pkts = (int)(pmnp->mst_nwp.link_nice * pmnp->mst_nwp.xmit_factor);
 
-    mst_tuple->nw_parms.xmit_curr_stream = (mst_tuple->nw_parms.xmit_curr_stream + 1) % mst_tuple->nw_parms.num_ostreams;
+    pmnp->mst_nwp.xmit_curr_stream = (pmnp->mst_nwp.xmit_curr_stream + 1) % pmnp->num_ostreams;
     //mst_tuple->nw_parms.xmit_curr_stream = 0;
 
     //fprintf(stderr, "Link nice: %f, xmit_max_pkts: %d\n", mst_tuple->nw_parms.link_nice, mst_tuple->nw_parms.xmit_max_pkts);

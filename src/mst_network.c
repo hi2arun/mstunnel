@@ -5,6 +5,8 @@
 #include "mst_tun.h"
 #include "mst_nw_queue.h"
 
+extern mst_nw_conn_table_t mst_nw_ct[D_NW_CONN_TABLE_SIZE];
+
 mst_event_base_t meb;
 mst_nw_peer_t *mnp; // For peers
 mst_nw_peer_t *mnp_l; // For local socket inits 
@@ -232,12 +234,12 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
     char ctrlmsg[CMSG_SPACE(sizeof(struct sctp_sndrcvinfo))];
     struct cmsghdr *cmsg;
     struct sctp_sndrcvinfo *sinfo;
-    mst_csi_t *mt = NULL;
+    //mst_csi_t *mt = NULL;
     struct iovec *iov = NULL;
     int iov_len = 0;
     mst_nw_header_t nw_header = {.nw_id = D_TEST_NW_ID, .nw_version = htonl(D_NW_VERSION_1_0)};
     
-    mt = pmnp->mst_mt;
+    //mt = pmnp->mst_mt;
     memset(&omsg, 0, sizeof(omsg));
 
     iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len, D_NW_READ);
@@ -264,7 +266,7 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
 
     //sinfo->sinfo_ppid = rand();
     sinfo->sinfo_ppid = 0;
-    sinfo->sinfo_stream = mt->nw_parms.xmit_curr_stream;
+    sinfo->sinfo_stream = pmnp->mst_nwp.xmit_curr_stream;
     sinfo->sinfo_flags = 0;
 
     rv = sendmsg(pmnp->mst_fd, &omsg, (rlen)?MSG_DONTWAIT:MSG_WAITALL);
@@ -515,7 +517,9 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
         assert(mnp[cfd].mst_mt->client);
         mnp[cfd].mst_mt->client->host_ipv4 = client.sin_addr.s_addr;
         mnp[cfd].mst_mt->client->port = client.sin_port;
-        mnp[cfd].mst_mt->nw_parms = pmnp->mst_mt->nw_parms;
+        mnp[cfd].mst_nwp = pmnp->mst_nwp;
+        mnp[cfd].num_ostreams = pmnp->num_ostreams;
+        mnp[cfd].max_instreams = pmnp->max_instreams;
 
         mnp[cfd].mst_curr = 0;
         mnp[cfd].mst_fd = cfd;
@@ -598,6 +602,9 @@ int mst_setup_network(void)
         memset(mnp_l[index].mst_connection, 0, sizeof(mst_conn_t));
         mnp_l[index].mst_fd = mst_create_socket();
         mnp_l[index].mst_mt = &mt[index];
+        mnp_l[index].mst_nwp = mt[index].nw_parms;
+        mnp_l[index].num_ostreams = mt[index].num_ostreams;
+        mnp_l[index].max_instreams = mt[index].max_instreams;
         mnp_l[index].mst_curr = 0;
         
         TAILQ_INIT(&mnp_l[index].mst_wq);
@@ -809,7 +816,14 @@ void *mst_nw_thread(void *arg)
 int mst_init_network(void)
 {
     pthread_t pt_nw_thread;
+    int index = 0;
     //int rv = -1;
+    //
+
+    for(index = 0; index < D_NW_CONN_TABLE_SIZE; index++) {
+        INIT_HLIST_HEAD(&mst_nw_ct[index].bucket);
+        pthread_mutex_init(&mst_nw_ct[index].b_lock, NULL);
+    }
 
     pthread_create(&pt_nw_thread, NULL, mst_nw_thread, NULL);
     sleep(2);

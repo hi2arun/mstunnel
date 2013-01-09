@@ -1,7 +1,7 @@
 #Makefile for mstunnel
 #
 ROOTDIR=..
-LIBS=-levent -ldl -lpthread -L/usr/lib -lglib-2.0 -lm
+LIBS=-levent -ldl -lpthread
 INC=$(ROOTDIR)/inc
 #INC+=-I/usr/include/glib-2.0/
 
@@ -14,8 +14,6 @@ MST_FLAGS+=-D__DEV_TEST__
 
 TARGET=${ROOTDIR}/bin/mstunnel
 CFLAGS=-g -pg -O2 -Wall ${MST_FLAGS}
-CFLAGS+=-I/usr/include/glib-2.0/
-CFLAGS+=-I/usr/lib/glib-2.0/include/
 CFLAGS+=-I${ROOTDIR}/lib
 CFLAGS+=-I${INC}
 

@@ -2,7 +2,9 @@
 #define __MST_NETWORK_H__
 
 #include "ds/mst_list.h"
+#include "ds/mst_jhash.h"
 
+#define D_NW_CONN_TABLE_SIZE 512
 // MSB(16 bytes): Major version
 // LSB(16 bytes): Minor version
 #define D_NW_VERSION_1_0 0x00010000
@@ -12,10 +14,21 @@ typedef struct mst_nw_header {
     int nw_version;
 } __attribute__((__packed__)) mst_nw_header_t;
 
+typedef struct mst_mnp {
+    int mnp_id;
+    TAILQ_ENTRY(mst_mnp) q_field;
+} mst_mnp_t;
+
 typedef struct mst_nw_conn {
     struct hlist_node hnode;
     int nw_id;
+    TAILQ_HEAD(mst_mnp_q, mst_mnp) mnp_list;
 } mst_nw_conn_t;
+
+typedef struct mst_nw_conn_table {
+    struct hlist_head bucket;
+    pthread_mutex_t b_lock;
+} mst_nw_conn_table_t;
 
 extern int mst_setup_network(void);
 extern int mst_loop_network(void);

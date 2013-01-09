@@ -229,14 +229,14 @@ int mst_insert_epoll_queue(mst_nw_q_t *qelm)
 void *mst_loop_tun_queue(void *arg)
 {
     mst_nw_q_t *qelm = NULL;
-    struct timespec cond_wait_ts;
+    //struct timespec cond_wait_ts;
 
     while (1) {
         pthread_mutex_lock(&tun_rq_lock);
         qelm = mst_tun_dequeue_tail();
         if (!qelm) {
-            cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_TO;
-            cond_wait_ts.tv_nsec = 0;
+            //cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_TO;
+            //cond_wait_ts.tv_nsec = 0;
             pthread_cond_wait(&tun_rq_cond, &tun_rq_lock);
             //pthread_cond_timedwait(&tun_rq_cond, &tun_rq_lock, &cond_wait_ts);
             pthread_mutex_unlock(&tun_rq_lock);
@@ -259,14 +259,14 @@ void *mst_loop_tun_queue(void *arg)
 void *mst_loop_tun_wq(void *arg)
 {
     mst_nw_q_t *qelm = NULL;
-    struct timespec cond_wait_ts;
+    //struct timespec cond_wait_ts;
 
     while (1) {
         pthread_mutex_lock(&tun_wq_lock);
         qelm = mst_tun_wq_tail();
         if (!qelm) {
-            cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_W_TO;
-            cond_wait_ts.tv_nsec = 0;
+            //cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_W_TO;
+            //cond_wait_ts.tv_nsec = 0;
             pthread_cond_wait(&tun_wq_cond, &tun_wq_lock);
             //pthread_cond_timedwait(&tun_wq_cond, &tun_wq_lock, &cond_wait_ts);
             pthread_mutex_unlock(&tun_wq_lock);
@@ -286,14 +286,14 @@ void *mst_loop_tun_wq(void *arg)
 void *mst_loop_nw_queue(void *arg)
 {
     mst_nw_q_t *qelm = NULL;
-    struct timespec cond_wait_ts;
+    //struct timespec cond_wait_ts;
 
     while (1) {
         pthread_mutex_lock(&nw_rq_lock);
         qelm = mst_nw_dequeue_tail();
         if (!qelm) {
-            cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_TO;
-            cond_wait_ts.tv_nsec = 0;
+            //cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_TO;
+            //cond_wait_ts.tv_nsec = 0;
             pthread_cond_wait(&nw_rq_cond, &nw_rq_lock);
             //pthread_cond_timedwait(&nw_rq_cond, &nw_rq_lock, &cond_wait_ts);
             pthread_mutex_unlock(&nw_rq_lock);
@@ -315,14 +315,14 @@ void *mst_loop_nw_queue(void *arg)
 void *mst_loop_nw_wq(void *arg)
 {
     mst_nw_q_t *qelm = NULL;
-    struct timespec cond_wait_ts;
+    //struct timespec cond_wait_ts;
 
     while (1) {
         pthread_mutex_lock(&nw_wq_lock);
         qelm = mst_nw_wq_tail();
         if (!qelm) {
-            cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_W_TO;
-            cond_wait_ts.tv_nsec = 0;
+            //cond_wait_ts.tv_sec = time(NULL) + D_COND_WAIT_W_TO;
+            //cond_wait_ts.tv_nsec = 0;
             pthread_cond_wait(&nw_wq_cond, &nw_wq_lock);
             //pthread_cond_timedwait(&nw_wq_cond, &nw_wq_lock, &cond_wait_ts);
             pthread_mutex_unlock(&nw_wq_lock);

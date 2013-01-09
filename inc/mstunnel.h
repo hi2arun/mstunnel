@@ -19,12 +19,12 @@
 #include <netdb.h>
 #include <net/if.h>
 #include <pthread.h>
-#include <glib.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 #include <linux/if_tun.h>
 #include <sys/queue.h>
 #include <sys/epoll.h>
+#include <signal.h>
 
 #include "mst_mbuf.h"
 #include "mst_constants.h"
@@ -59,8 +59,6 @@ typedef struct mst_configuration {
 } mst_config_t;
 
 typedef struct mst_nw_parms {
-    unsigned short num_ostreams; // number of out streams
-    unsigned short max_instreams; // Max instreams that we support
     float link_nice; // ~ 1/(avg SRTT) of the link
     int xmit_factor; // default 10
     int xmit_max_pkts; // link_nice * xmit_factor
@@ -73,9 +71,11 @@ typedef struct mst_nw_parms {
 typedef struct mst_clisvr_info {
     // multiple Interfaces/links to one/multiple servers
     struct mst_clisvr_info *__next;
+    unsigned short num_ostreams; // number of out streams
+    unsigned short max_instreams; // Max instreams that we support
+    mst_nw_parms_t nw_parms;
     mst_node_info_t *client;
     mst_node_info_t *server;
-    mst_nw_parms_t nw_parms;
 } mst_csi_t;
 
 typedef struct mst_opts {
@@ -115,6 +115,7 @@ typedef struct mst_conn {
     mst_csi_t *mst_tuple;
     struct mst_timer_data *timer_data; 
     mst_stat_t mst_conn_stat;
+    mst_nw_parms_t nw_parms;
     mst_buffer_t *mbuf;
     struct iovec *iov;
     struct mst_mbuf_q mbuf_wq; // write_queue
@@ -174,6 +175,8 @@ typedef struct mst_nw_peer {
     mst_conn_t *mst_connection;
     int mnp_pair; //holds a pointer to its pair FD. conn <-> tunn pair
     int nw_id;
+    unsigned short num_ostreams; // number of out streams
+    unsigned short max_instreams; // Max instreams that we support
     mst_config_t *mst_config;
     pthread_mutex_t ref_lock;
     atomic_t ref_cnt;
@@ -222,6 +225,7 @@ typedef struct mst_timer {
 #define mst_rc mst_connection->ref_cnt
 #define mst_ef mst_connection->event_flags
 #define mst_curr mst_connection->curr_state
+#define mst_nwp mst_connection->nw_parms
 
 #define mst_ec mst_config.ev_cfg
 #define mst_ses mst_config.sctp_ev_subsc
