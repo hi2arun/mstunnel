@@ -65,7 +65,7 @@ mst_get_tuple_config(void)
 int mst_init_test_tuple(mst_csi_t **mt)
 {
     mst_csi_t *pmt = NULL;
-    *mt = (mst_csi_t *)__mst_malloc(sizeof(mst_csi_t));
+    *mt = (mst_csi_t *)__mst_malloc(sizeof(mst_csi_t) * mst_global_opts.mst_tuple_cnt);
     if (!(*mt)) {
         fprintf(stderr, "%d: Malloc failed\n", __LINE__);
         return -1;
@@ -97,10 +97,42 @@ int mst_init_test_tuple(mst_csi_t **mt)
     pmt->num_ostreams = 10;
     pmt->max_instreams = 10;
     pmt->nw_parms.link_nice = 1.0;
-    pmt->nw_parms.xmit_factor = 1000;
-    pmt->nw_parms.xmit_max_pkts = (int)(pmt->nw_parms.link_nice * pmt->nw_parms.xmit_factor);
+    pmt->nw_parms.xmit_factor = 100000;
+    atomic_set(&pmt->nw_parms.xmit_max_pkts, (int)(pmt->nw_parms.link_nice * pmt->nw_parms.xmit_factor));
     pmt->nw_parms.xmit_curr_cnt = 0;
     pmt->nw_parms.xmit_curr_stream = 0;
+
+
+    pmt = (pmt + 1);
+    pmt->__next = NULL;
+    pmt->client = (mst_node_info_t *)__mst_malloc(sizeof(mst_node_info_t));
+    if (!pmt->client) {
+        fprintf(stderr, "%d: Malloc failed\n", __LINE__);
+        return -1;
+    }
+    pmt->server = (mst_node_info_t *)__mst_malloc(sizeof(mst_node_info_t));
+    if (!pmt->server) {
+        fprintf(stderr, "%d: Malloc failed\n", __LINE__);
+        return -1;
+    }
+    pmt->client->host_name = NULL; // letz go by IP address
+    pmt->client->host_addr = "16.1.1.2";
+    pmt->client->port = 0; // leave it to OS for port assign
+    pmt->client->policy_mark = 0; // Disable policy mark
+
+    pmt->server->host_name = NULL; // letz go by IP address
+    pmt->server->host_addr = "16.1.1.1";
+    pmt->server->port = 40400; 
+    pmt->server->policy_mark = 0; // Disable policy mark
+
+    pmt->num_ostreams = 10;
+    pmt->max_instreams = 10;
+    pmt->nw_parms.link_nice = 1.0;
+    pmt->nw_parms.xmit_factor = 100000;
+    atomic_set(&pmt->nw_parms.xmit_max_pkts, (int)(pmt->nw_parms.link_nice * pmt->nw_parms.xmit_factor));
+    pmt->nw_parms.xmit_curr_cnt = 0;
+    pmt->nw_parms.xmit_curr_stream = 0;
+
 
     return 0;
 }
@@ -124,7 +156,7 @@ int mst_config_init(void)
     mst_global_opts.mst_ses.sctp_association_event = 1;
     mst_global_opts.mst_ses.sctp_shutdown_event = 1;
 
-    mst_global_opts.mst_tuple_cnt = 1;
+    mst_global_opts.mst_tuple_cnt = 2;
     mst_global_opts.mst_sk_backlog = D_SRV_BACKLOG; 
 
 #ifdef __DEV_TEST__

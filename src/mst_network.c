@@ -20,6 +20,16 @@ atomic_t nw_reads, nw_writes;
 #define D_TUN_READ 0
 #define D_NW_READ 1
 
+inline int mst_get_mnp_state(mst_nw_peer_t *pmnp) 
+{
+    int state = 0;
+    pthread_mutex_lock(&pmnp->ref_lock);
+    state = M_MNP_STATE(pmnp->mnp_flags);
+    pthread_mutex_unlock(&pmnp->ref_lock);
+
+    return state;
+}
+
 inline void mst_epoll_events(mst_nw_peer_t *pmnp, int ev_cmd, int events)
 {
     struct epoll_event ev;
@@ -166,6 +176,12 @@ int mst_send_nw_init(mst_nw_peer_t *pmnp)
     mst_do_nw_write(pmnp, mbuf, 0);
     fprintf(stderr, "%s(): Sent init message\n", __func__);
 
+    if (!mst_lookup_nw_id(ntohl(pmnp->nw_id))) {
+        mst_setup_tunnel(pmnp);
+    }
+    
+    mst_insert_mnp_by_nw_id(ntohl(pmnp->nw_id), (int) pmnp);
+
     mst_dealloc_mbuf(mbuf);
 
     return 0;
@@ -177,6 +193,7 @@ int mst_do_tun_read(mst_nw_peer_t *pmnp)
     mst_buffer_t *mbuf = NULL;
     int rlen = 0;
     int iov_len = 0;
+    mst_nw_peer_t *spmnp;
 
 tun_read_again:
     //fprintf(stderr, "%s(): __ENTRY__\n", __func__);
@@ -208,10 +225,12 @@ tun_read_again:
     }
 
     if (rlen > 0) {
+        spmnp = mst_get_next_fd(ntohl(pmnp->nw_id));
         //fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
         //mst_do_nw_write((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
 #if 1
-        if (-1 == mst_insert_mbuf_q((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen)) {
+        //if (-1 == mst_insert_mbuf_q((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen)) {
+        if (!spmnp || (-1 == mst_insert_mbuf_q(spmnp, pmnp->mst_cbuf, rlen))) {
             mst_dealloc_mbuf(mbuf);
         }
         atomic_inc(&tun_reads);
@@ -243,6 +262,10 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
     memset(&omsg, 0, sizeof(omsg));
 
     iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len, D_NW_READ);
+
+    if (!rlen) {
+        pmnp->nw_id = nw_header.nw_id;
+    }
 
     iov[0].iov_base = &nw_header;
     iov[0].iov_len = sizeof(mst_nw_header_t);
@@ -333,6 +356,7 @@ int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
             }
             __mst_free(pmnp->mst_mt);
         }
+        mst_remove_mnp_by_nw_id(ntohl(pmnp->nw_id), (int)pmnp);
         //mst_destroy_mbuf_q(&pmnp->mst_wq);
         pmnp->mst_fd = -1;
     }
@@ -470,13 +494,14 @@ int mst_setup_tunnel(mst_nw_peer_t *pmnp)
 
     mnp[tunfd].mst_td = NULL;
     mnp[tunfd].mnp_pair = (int)pmnp;
+    mnp[tunfd].nw_id = pmnp->nw_id;
     M_MNP_REF_UP(&mnp[tunfd]);
     
     mst_epoll_events (&mnp[tunfd], EPOLL_CTL_ADD, (EPOLLIN|EPOLLET));
     //mst_epoll_events (&mnp[tunfd], EPOLL_CTL_ADD, (EPOLLIN));
     
     pthread_mutex_lock(&pmnp->ref_lock);
-    fprintf(stderr, "NW<->TUN pair: %d <-> %d\n", pmnp->mst_fd, tunfd);
+    fprintf(stderr, "NW<->TUN pair: %d <-> %d: NWID 0x%X\n", pmnp->mst_fd, tunfd, ntohl(mnp[tunfd].nw_id));
     pmnp->mnp_pair = (int)&mnp[tunfd];
     pthread_mutex_unlock(&pmnp->ref_lock);
 
@@ -659,7 +684,6 @@ mst_do_connect(mst_nw_peer_t *pmnp)
     pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_ESTABLISHED);
     pmnp->mst_td->timeo.tv_sec = 1;
     pmnp->mst_td->timeo.tv_usec = 0;
-    mst_setup_tunnel(pmnp);
 
     mst_nw_read(pmnp);
     
@@ -787,7 +811,8 @@ void *mst_nw_thread(void *arg)
             }
 
             //fprintf(stderr, "EPOLL loop, pmnp: %p, flags: %0X\n", pmnp, pmnp->mnp_flags);
-            switch(M_MNP_STATE(pmnp->mnp_flags)) {
+            //switch(M_MNP_STATE(pmnp->mnp_flags)) {
+            switch(mst_get_mnp_state(pmnp)) {
                 case D_MNP_STATE_LISTEN:
                     mst_do_accept(pmnp);
                     break;

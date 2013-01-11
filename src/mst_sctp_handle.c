@@ -52,6 +52,7 @@ mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
         // Comm UP
         case 0:
             //fprintf(stderr, "COMM_UP - Setting up tunnel\n");
+            atomic_set(&pmnp->mst_nwp.xmit_curr_pkts, 0);
             //mst_setup_tunnel(pmnp);
             break;
         // Comm RESTART
@@ -226,16 +227,30 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
         //fprintf(stderr, "NW ID: 0x%x, version: 0x%x\n", ntohl(nw_header->nw_id), ntohl(nw_header->nw_version));
         // TODO: Validate/add nw_id. If failed, process error
         if (rlen > sizeof(mst_nw_header_t)) {
-            __mst_free(nw_header);
-            rv = mst_process_data(pmnp, rmsg, rlen);
+            if (!mst_lookup_nw_id(ntohl(nw_header->nw_id))) {
+                fprintf(stderr, "No NW ID is present in CT. Rejecting packet\n");
+            }
+            else {
+                __mst_free(nw_header);
+                rv = mst_process_data(pmnp, rmsg, rlen);
+            }
         }
         else {
+            int retval = 0;
+            int retval_1 = 0;
             fprintf(stderr, "NW control message is received\n");
-            pmnp->mnp_flags = M_MNP_UNSET_STATE(pmnp->mnp_flags, D_MNP_STATE_CONNECTED);
-            pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_ESTABLISHED);
-            pmnp->mst_td->timeo.tv_sec = 1;
-            pmnp->mst_td->timeo.tv_usec = 0;
-            mst_setup_tunnel(pmnp);
+            pmnp->nw_id = nw_header->nw_id;
+            if (!mst_lookup_nw_id(ntohl(nw_header->nw_id))) {
+                mst_setup_tunnel(pmnp);
+            }
+            if (0 == (retval = mst_lookup_mnp_by_nw_id(ntohl(nw_header->nw_id), (int)pmnp))) {
+                if (0 == (retval_1 = mst_insert_mnp_by_nw_id(ntohl(nw_header->nw_id), (int)pmnp))) {
+                    pmnp->mnp_flags = M_MNP_UNSET_STATE(pmnp->mnp_flags, D_MNP_STATE_CONNECTED);
+                    pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_ESTABLISHED);
+                    pmnp->mst_td->timeo.tv_sec = 1;
+                    pmnp->mst_td->timeo.tv_usec = 0;
+                }
+            }
         }
     }
 
@@ -304,14 +319,53 @@ mst_link_status(mst_nw_peer_t *pmnp)
     mst_print_sctp_paddrinfo(&link_status.sstat_primary);
 
     pmnp->mst_nwp.link_nice = (link_status.sstat_primary.spinfo_srtt)?((float)1.0/link_status.sstat_primary.spinfo_srtt):1.0;
-    pmnp->mst_nwp.xmit_max_pkts = (int)(pmnp->mst_nwp.link_nice * pmnp->mst_nwp.xmit_factor);
+
+    if (0 == atomic_read(&pmnp->mst_nwp.xmit_curr_pkts)) {
+        atomic_set(&pmnp->mst_nwp.xmit_max_pkts, (int)(pmnp->mst_nwp.link_nice * pmnp->mst_nwp.xmit_factor));
+        atomic_set(&pmnp->mst_nwp.xmit_curr_pkts, atomic_read(&pmnp->mst_nwp.xmit_max_pkts));
+    }
 
     pmnp->mst_nwp.xmit_curr_stream = (pmnp->mst_nwp.xmit_curr_stream + 1) % pmnp->num_ostreams;
     //mst_tuple->nw_parms.xmit_curr_stream = 0;
 
-    //fprintf(stderr, "Link nice: %f, xmit_max_pkts: %d\n", mst_tuple->nw_parms.link_nice, mst_tuple->nw_parms.xmit_max_pkts);
+    fprintf(stderr, "Link nice: %f, xmit_max_pkts: %d\n", pmnp->mst_nwp.link_nice, atomic_read(&pmnp->mst_nwp.xmit_max_pkts));
     
     M_MNP_REF_DOWN_AND_FREE(pmnp);
 
     return 0;
+}
+
+mst_nw_peer_t *mst_get_next_fd(int nw_id)
+{
+    mst_nw_conn_t *nw_conn = mst_mnp_by_nw_id(nw_id);
+    mst_nw_peer_t *pmnp;
+    int curr_slot = 0;
+    int index = 0;
+    int curr_pkts = 0;
+
+    if (!nw_conn) {
+        fprintf(stderr, "[WARNING] No NW-CONN available for nw id 0x%X\n", nw_id);
+        return NULL;
+    }
+    curr_slot = nw_conn->curr_slot;
+
+    for (index = 0; index < D_NW_TOT_LINKS; index++) {
+        if (!nw_conn->mnp_slots[curr_slot].slot_available) {
+            pmnp = (mst_nw_peer_t *)(nw_conn->mnp_slots[curr_slot].mnp_id);
+            curr_pkts = atomic_read(&pmnp->mst_nwp.xmit_curr_pkts);
+            if (curr_pkts) {
+                atomic_dec(&pmnp->mst_nwp.xmit_curr_pkts);
+                nw_conn->curr_slot = curr_slot;
+                pthread_mutex_unlock(&nw_conn->n_lock); // lock was acquired by mst_mnp_by_nw_id()
+                return pmnp;
+            }
+        }
+
+        fprintf(stderr, "Moving from slot %d to next\n", curr_slot);
+        curr_slot = (curr_slot + 1)%D_NW_TOT_LINKS;
+    }
+        
+    pthread_mutex_unlock(&nw_conn->n_lock); // lock was acquired by mst_mnp_by_nw_id()
+    fprintf(stderr, "[WARNING] No NW-CONN available for nw id 0x%X\n", nw_id);
+    return NULL;
 }

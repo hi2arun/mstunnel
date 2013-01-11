@@ -61,7 +61,8 @@ typedef struct mst_configuration {
 typedef struct mst_nw_parms {
     float link_nice; // ~ 1/(avg SRTT) of the link
     int xmit_factor; // default 10
-    int xmit_max_pkts; // link_nice * xmit_factor
+    atomic_t xmit_max_pkts; // link_nice * xmit_factor
+    atomic_t xmit_curr_pkts; 
     int xmit_curr_cnt; // Current cnt transmitted
     int xmit_curr_stream; // Current stream #
     //TODO: Extend this to have all conn/tunn specific config and placeholders
@@ -240,5 +241,7 @@ extern int mst_link_status(mst_nw_peer_t *mnp);
 
 extern inline mst_csi_t * mst_get_tuple_config(void);
 extern inline mst_config_t * mst_get_mst_config(void);
+
+extern inline int mst_get_mnp_state(mst_nw_peer_t *pmnp); 
 
 #endif //!__MST_MSTUNNEL_H__
