@@ -1,8 +1,18 @@
 #ifndef __MST_NETWORK_H__
 #define __MST_NETWORK_H__
 
+#include <netinet/ip.h>
+
 #include "ds/mst_list.h"
 #include "ds/mst_jhash.h"
+
+#define D_IPV4 4
+#define D_IPV4_STR_FMT "%u.%u.%u.%u"
+#define M_NIPQUAD(x) \
+    (unsigned)*(((char *)x) + 0), \
+    (unsigned)*(((char *)x) + 1), \
+    (unsigned)*(((char *)x) + 2), \
+    (unsigned)*(((char *)x) + 3)
 
 #define D_NW_CONN_TABLE_SIZE 512
 #define D_NW_TOT_LINKS 2
@@ -37,6 +47,31 @@ typedef struct mst_nw_conn_table {
     pthread_mutex_t b_lock; // bucket lock
 } mst_nw_conn_table_t;
 
+#define D_IP_FLOW_TABLE_SIZE 512
+#define D_IP_SLOTS_PER_FLOW 32
+
+typedef enum mst_ip_dir {
+    E_NW_IN = 100,
+    E_TUN_IN,
+} mst_ip_dir_t;
+
+typedef struct mst_ip_tuple {
+    struct mst_ip_tuple *next;
+    struct mst_ip_tuple *prev;
+    unsigned sip;
+    unsigned dip;
+    unsigned sid; // SCTP flow ID
+    unsigned hits;
+    // perhaps, will think of adding L4 info later
+} mst_ip_tuple_t;
+
+typedef struct mst_nw_ip_flow {
+    mst_ip_tuple_t *head;
+    mst_ip_tuple_t *tail;
+    int slots;
+    pthread_mutex_t b_lock; // bucket lock
+} mst_nw_ip_flow_t;
+
 extern int mst_setup_network(void);
 extern int mst_loop_network(void);
 extern int mst_setup_tunnel(mst_nw_peer_t *pmnp);
@@ -56,5 +91,12 @@ extern int mst_lookup_mnp_by_nw_id (int nw_id, int mnp_id);
 extern int mst_insert_mnp_by_nw_id (int nw_id, int mnp_id);
 extern int mst_remove_mnp_by_nw_id (int nw_id, int mnp_id);
 extern mst_nw_peer_t *mst_get_next_fd(int nw_id);
+
+
+extern int mst_init_ip_flow_table(void);
+extern int mst_insert_ip_tuple(unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsigned sid);
+extern int mst_lookup_ip_tuple(unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int sid);
+extern int mst_get_ip_info(char *data, int rlen, unsigned *sip, unsigned *dip);
+extern void mst_dump_ip_flow_table(void);
 
 #endif //!__MST_NETWORK_H__

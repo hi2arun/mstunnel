@@ -83,25 +83,25 @@ mst_process_pac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 int
 mst_process_sf(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    //fprintf(stderr, "ENTRY: %s()\n", __func__);
+    fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
 mst_process_re(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    //fprintf(stderr, "ENTRY: %s()\n", __func__);
+    fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
 mst_process_se(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    //fprintf(stderr, "ENTRY: %s()\n", __func__);
+    fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
 mst_process_pde(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    //fprintf(stderr, "ENTRY: %s()\n", __func__);
+    fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 int
@@ -162,14 +162,43 @@ mst_process_notification(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 }
 
 int
+mst_get_sid(struct msghdr *rmsg)
+{
+    struct cmsghdr *scmsg = NULL;
+    sctp_cmsg_data_t *rdata = NULL;
+    
+    for(scmsg = CMSG_FIRSTHDR(rmsg); scmsg != NULL; scmsg = CMSG_NXTHDR(rmsg, scmsg)) {
+        rdata = (sctp_cmsg_data_t *)CMSG_DATA(scmsg);
+        if (SCTP_SNDRCV == scmsg->cmsg_type) {
+            return rdata->sndrcv.sinfo_stream;
+        }
+    }
+
+    return -1;
+}
+
+int
 mst_process_data(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
+    unsigned sip = 0, dip = 0;
+    struct iovec *iov;
+    int sid = -1;
     //fprintf(stderr, "ENTRY: %s()\n", __func__);
-    //mst_do_tun_write((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
+    //
+    iov = rmsg->msg_iov;
+
+    if (!mst_get_ip_info(iov[1].iov_base, iov[1].iov_len, &sip, &dip)) {
+        sid = mst_get_sid(rmsg);
+        if (mst_lookup_ip_tuple(sip, dip, E_NW_IN, sid) < 0) {
+            mst_insert_ip_tuple(sip, dip, E_NW_IN, sid);
+        }
+        pmnp->mst_cbuf->sid = sid;
+        
+        mst_insert_mbuf_q((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
+        return 5;
+    }
     
-    mst_insert_mbuf_q((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
-   //return 0;
-   return 5;
+   return 0;
 }
 
 int 
@@ -238,7 +267,7 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
         else {
             int retval = 0;
             int retval_1 = 0;
-            fprintf(stderr, "NW control message is received\n");
+            fprintf(stderr, "NW control message is received: NW ID: 0x%x\n", ntohl(nw_header->nw_id));
             pmnp->nw_id = nw_header->nw_id;
             if (!mst_lookup_nw_id(ntohl(nw_header->nw_id))) {
                 mst_setup_tunnel(pmnp);
@@ -247,8 +276,8 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
                 if (0 == (retval_1 = mst_insert_mnp_by_nw_id(ntohl(nw_header->nw_id), (int)pmnp))) {
                     pmnp->mnp_flags = M_MNP_UNSET_STATE(pmnp->mnp_flags, D_MNP_STATE_CONNECTED);
                     pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_ESTABLISHED);
-                    pmnp->mst_td->timeo.tv_sec = 1;
-                    pmnp->mst_td->timeo.tv_usec = 0;
+                    pmnp->mst_td->timeo.tv_sec = 0;
+                    pmnp->mst_td->timeo.tv_usec = 50000;
                 }
             }
         }
@@ -319,8 +348,11 @@ mst_link_status(mst_nw_peer_t *pmnp)
     mst_print_sctp_paddrinfo(&link_status.sstat_primary);
 
     pmnp->mst_nwp.link_nice = (link_status.sstat_primary.spinfo_srtt)?((float)1.0/link_status.sstat_primary.spinfo_srtt):1.0;
+    pmnp->mst_nwp.link_nice += (link_status.sstat_unackdata)?((float)1/link_status.sstat_unackdata):1.0;
+    pmnp->mst_nwp.link_nice += (link_status.sstat_penddata)?((float)1/link_status.sstat_penddata):1.0;
 
-    if (0 == atomic_read(&pmnp->mst_nwp.xmit_curr_pkts)) {
+    if (0 == atomic_read(&pmnp->mst_nwp.xmit_curr_pkts)) 
+    {
         atomic_set(&pmnp->mst_nwp.xmit_max_pkts, (int)(pmnp->mst_nwp.link_nice * pmnp->mst_nwp.xmit_factor));
         atomic_set(&pmnp->mst_nwp.xmit_curr_pkts, atomic_read(&pmnp->mst_nwp.xmit_max_pkts));
     }
@@ -328,7 +360,9 @@ mst_link_status(mst_nw_peer_t *pmnp)
     pmnp->mst_nwp.xmit_curr_stream = (pmnp->mst_nwp.xmit_curr_stream + 1) % pmnp->num_ostreams;
     //mst_tuple->nw_parms.xmit_curr_stream = 0;
 
-    fprintf(stderr, "Link nice: %f, xmit_max_pkts: %d\n", pmnp->mst_nwp.link_nice, atomic_read(&pmnp->mst_nwp.xmit_max_pkts));
+    //fprintf(stderr, "Unackdata: %f, ", (link_status.sstat_unackdata)?1/(link_status.sstat_unackdata):0.0);
+    //fprintf(stderr, "Pend data: %f, ", (link_status.sstat_penddata)?1/(link_status.sstat_penddata):0.0);
+    //fprintf(stderr, "[%p] Link nice: %f, xmit_max_pkts: %d\n", pmnp, pmnp->mst_nwp.link_nice, atomic_read(&pmnp->mst_nwp.xmit_max_pkts));
     
     M_MNP_REF_DOWN_AND_FREE(pmnp);
 
@@ -361,7 +395,7 @@ mst_nw_peer_t *mst_get_next_fd(int nw_id)
             }
         }
 
-        fprintf(stderr, "Moving from slot %d to next\n", curr_slot);
+        //fprintf(stderr, "Moving from slot %d to next\n", curr_slot);
         curr_slot = (curr_slot + 1)%D_NW_TOT_LINKS;
     }
         

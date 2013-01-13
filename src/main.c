@@ -97,7 +97,7 @@ int mst_init_test_tuple(mst_csi_t **mt)
     pmt->num_ostreams = 10;
     pmt->max_instreams = 10;
     pmt->nw_parms.link_nice = 1.0;
-    pmt->nw_parms.xmit_factor = 100000;
+    pmt->nw_parms.xmit_factor = 500;
     atomic_set(&pmt->nw_parms.xmit_max_pkts, (int)(pmt->nw_parms.link_nice * pmt->nw_parms.xmit_factor));
     pmt->nw_parms.xmit_curr_cnt = 0;
     pmt->nw_parms.xmit_curr_stream = 0;
@@ -128,7 +128,7 @@ int mst_init_test_tuple(mst_csi_t **mt)
     pmt->num_ostreams = 10;
     pmt->max_instreams = 10;
     pmt->nw_parms.link_nice = 1.0;
-    pmt->nw_parms.xmit_factor = 100000;
+    pmt->nw_parms.xmit_factor = 500;
     atomic_set(&pmt->nw_parms.xmit_max_pkts, (int)(pmt->nw_parms.link_nice * pmt->nw_parms.xmit_factor));
     pmt->nw_parms.xmit_curr_cnt = 0;
     pmt->nw_parms.xmit_curr_stream = 0;
@@ -178,6 +178,8 @@ void sig_handler(int signo)
     
     fprintf(stderr, "Nw-R %d, Nw-W: %d\n", atomic_read(&nw_reads), atomic_read(&nw_writes));
     fprintf(stderr, "Tun-R: %d, Tun-W: %d\n", atomic_read(&tun_reads), atomic_read(&tun_writes));
+
+    mst_dump_ip_flow_table();
 
     exit(EXIT_SUCCESS);
     return;

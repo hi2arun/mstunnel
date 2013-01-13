@@ -36,6 +36,7 @@ typedef struct mst_buffer {
     struct mst_mem_config *__which;
     mst_buf_t buf_type;
     void *buffer;
+    unsigned sid; // SCTP flow id
     int buf_len;
     struct iovec *iov;
     int iov_len;

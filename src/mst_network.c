@@ -187,6 +187,31 @@ int mst_send_nw_init(mst_nw_peer_t *pmnp)
     return 0;
 }
 
+int mst_get_ip_info(char *data, int rlen, unsigned *sip, unsigned *dip)
+{
+    struct ip *iph;
+
+    iph = (struct ip *)data;
+
+    if ((rlen < sizeof(struct ip)) || (D_IPV4 != iph->ip_v)) {
+        fprintf(stderr, "[WARNING] Unknown IP version: %d or len: %d\n", iph->ip_v, rlen);
+        return -1;
+    }
+
+    //fprintf(stderr, "SIP: "D_IPV4_STR_FMT", DIP: "D_IPV4_STR_FMT"\n", M_NIPQUAD(&iph->ip_src), M_NIPQUAD(&iph->ip_dst));
+    *sip = iph->ip_src.s_addr;
+    *dip = iph->ip_dst.s_addr;
+
+    return 0;
+}
+
+int mst_get_new_sid(void)
+{
+    int sid = rand();
+
+    return (sid % 10);
+}
+
 int mst_do_tun_read(mst_nw_peer_t *pmnp)
 {
     struct iovec *iov = NULL;
@@ -225,16 +250,27 @@ tun_read_again:
     }
 
     if (rlen > 0) {
-        spmnp = mst_get_next_fd(ntohl(pmnp->nw_id));
-        //fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
-        //mst_do_nw_write((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen);
-#if 1
-        //if (-1 == mst_insert_mbuf_q((mst_nw_peer_t *)pmnp->mnp_pair, pmnp->mst_cbuf, rlen)) {
-        if (!spmnp || (-1 == mst_insert_mbuf_q(spmnp, pmnp->mst_cbuf, rlen))) {
-            mst_dealloc_mbuf(mbuf);
+        unsigned sip = 0, dip = 0;
+        int sid = -1;
+
+        if (!mst_get_ip_info(iov[1].iov_base, iov[1].iov_len, &sip, &dip)) {
+
+            sid = mst_lookup_ip_tuple(sip, dip, E_TUN_IN, sid);
+            if (sid < 0) {
+                sid = mst_get_new_sid();
+                fprintf(stderr, "New SID is %d\n",sid);
+                mst_insert_ip_tuple(sip, dip, E_TUN_IN, sid);
+            }
+            pmnp->mst_cbuf->sid = sid;
+
+            spmnp = mst_get_next_fd(ntohl(pmnp->nw_id));
+            //fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
+            
+            if (!spmnp || (-1 == mst_insert_mbuf_q(spmnp, pmnp->mst_cbuf, rlen))) {
+                mst_dealloc_mbuf(mbuf);
+            }
+            atomic_inc(&tun_reads);
         }
-        atomic_inc(&tun_reads);
-#endif
     }
 
     //mst_dealloc_mbuf(mbuf);
@@ -256,6 +292,7 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
     //mst_csi_t *mt = NULL;
     struct iovec *iov = NULL;
     int iov_len = 0;
+    int sid = -1;
     mst_nw_header_t nw_header = {.nw_id = D_TEST_NW_ID, .nw_version = htonl(D_NW_VERSION_1_0)};
     
     //mt = pmnp->mst_mt;
@@ -265,6 +302,10 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
 
     if (!rlen) {
         pmnp->nw_id = nw_header.nw_id;
+        sid = mst_get_new_sid();
+    }
+    else {
+        sid = mbuf->sid;
     }
 
     iov[0].iov_base = &nw_header;
@@ -289,7 +330,7 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
 
     //sinfo->sinfo_ppid = rand();
     sinfo->sinfo_ppid = 0;
-    sinfo->sinfo_stream = pmnp->mst_nwp.xmit_curr_stream;
+    sinfo->sinfo_stream = sid;
     sinfo->sinfo_flags = 0;
 
     rv = sendmsg(pmnp->mst_fd, &omsg, (rlen)?MSG_DONTWAIT:MSG_WAITALL);
@@ -682,8 +723,8 @@ mst_do_connect(mst_nw_peer_t *pmnp)
 
     pmnp->mnp_flags = M_MNP_UNSET_STATE(pmnp->mnp_flags, D_MNP_STATE_CONNECTED);
     pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_ESTABLISHED);
-    pmnp->mst_td->timeo.tv_sec = 1;
-    pmnp->mst_td->timeo.tv_usec = 0;
+    pmnp->mst_td->timeo.tv_sec = 0;
+    pmnp->mst_td->timeo.tv_usec = 50000;
 
     mst_nw_read(pmnp);
     
@@ -849,6 +890,8 @@ int mst_init_network(void)
         INIT_HLIST_HEAD(&mst_nw_ct[index].bucket);
         pthread_mutex_init(&mst_nw_ct[index].b_lock, NULL);
     }
+
+    mst_init_ip_flow_table();
 
     pthread_create(&pt_nw_thread, NULL, mst_nw_thread, NULL);
     sleep(2);
