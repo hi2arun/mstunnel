@@ -1,7 +1,7 @@
 #include "mstunnel.h"
 #include "mst_network.h"
-#include "memmgmt.h"
 #include "mst_tun.h"
+#include "memmgmt.h"
 
 mst_dev_mngr_t g_mdm;
 

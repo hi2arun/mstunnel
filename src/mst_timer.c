@@ -46,7 +46,7 @@ int mst_timer_init(void)
 {
     //pthread_t pt_status_timer;
 
-    sys_td = (mst_timer_data_t *)__mst_malloc(sizeof(mst_timer_data_t));
+    sys_td = (mst_timer_data_t *)malloc(sizeof(mst_timer_data_t));
     assert(sys_td);
 
     sys_td->type = MST_SYS;

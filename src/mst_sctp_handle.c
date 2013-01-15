@@ -260,7 +260,7 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
                 fprintf(stderr, "No NW ID is present in CT. Rejecting packet\n");
             }
             else {
-                __mst_free(nw_header);
+                free(nw_header);
                 rv = mst_process_data(pmnp, rmsg, rlen);
             }
         }

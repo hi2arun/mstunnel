@@ -131,7 +131,7 @@ int mst_remove_mnp_by_nw_id (int nw_id, int mnp_id)
             pthread_mutex_lock(&mst_nw_conn_bkt->b_lock);
             hlist_del(&nw_conn->hnode);
             pthread_mutex_unlock(&mst_nw_conn_bkt->b_lock);
-            __mst_free(nw_conn);
+            free(nw_conn);
             fprintf(stderr, "bucket %d freed\n", bucket_id);
         }
     }
@@ -156,7 +156,7 @@ int mst_insert_mnp_by_nw_id (int nw_id, int mnp_id)
     nw_conn = mst_mnp_by_nw_id(nw_id);
 
     if (!nw_conn) {
-        nw_conn = __mst_malloc(sizeof(mst_nw_conn_t));
+        nw_conn = malloc(sizeof(mst_nw_conn_t));
         pthread_mutex_init(&nw_conn->n_lock, NULL);
         nw_conn->nw_id = nw_id;
         memset(nw_conn->mnp_slots, 0, sizeof(nw_conn->mnp_slots));

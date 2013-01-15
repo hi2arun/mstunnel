@@ -20,6 +20,7 @@ mem_slot_details_t msd[mst_buf_unk] = {
     {"mst_buf4096", 4096},
 };
 
+//#define D_MEM_SIZE_PER_CHAIN (1024 * 10240) // 10 M
 #define D_MEM_SIZE_PER_CHAIN (1024 * 10240) // 10 M
 
 int mst_add_mbuf_to_inuse(int slot, mst_buffer_t *__mbuf)
@@ -58,7 +59,7 @@ chk:
 
 void mst_free_iov(struct iovec *iov)
 {
-    __mst_free(iov);
+    free(iov);
     return;
 }
 
@@ -100,7 +101,7 @@ mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len, int id_flag)
 
     assert((id_flag != 0) || (id_flag != 1));
 
-    mbuf->iov = (struct iovec*)__mst_malloc(sizeof(struct iovec) * (mbuf->frags_count + id_flag /*SCTP Code*/ + 1 /*first buffer*/));
+    mbuf->iov = (struct iovec*)malloc(sizeof(struct iovec) * (mbuf->frags_count + id_flag /*SCTP Code*/ + 1 /*first buffer*/));
     if (!mbuf->iov) {
         return NULL;
     }
@@ -195,7 +196,7 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     mbuf->mfrags = NULL;
     mbuf->mfrags_tail = NULL;
     if (mbuf->iov) {
-        __mst_free(mbuf->iov);
+        free(mbuf->iov);
         mbuf->iov = NULL;
     }
     mbuf->iov_len = 0;
@@ -343,14 +344,14 @@ mst_membuf_init()
         pthread_mutex_init(&mst_mbuf_inuse_slots[index].mem_lock, NULL);
 
         for (cntr = 0; cntr < mst_mbuf_free_slots[index].__mbuf_chain.mbuf_count; cntr++) {
-            mst_buffer_t *node = (mst_buffer_t *)__mst_malloc(sizeof(mst_buffer_t));
+            mst_buffer_t *node = (mst_buffer_t *)malloc(sizeof(mst_buffer_t));
             if (!node) {
                 fprintf(stderr, "FATAL: malloc failed\n");
                 assert(node);
             }
             node->buf_type = index;
             node->__which = &mst_mbuf_free_slots[index];
-            node->buffer = (void *)__mst_malloc(mst_mbuf_free_slots[index].size_per_block);
+            node->buffer = (void *)malloc(mst_mbuf_free_slots[index].size_per_block);
             node->buf_len = mst_mbuf_free_slots[index].size_per_block;
             node->mfrags_tail = node->mfrags = NULL;
             node->iov = NULL;

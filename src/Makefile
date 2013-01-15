@@ -1,7 +1,7 @@
 #Makefile for mstunnel
 #
 ROOTDIR=..
-LIBS=-levent -ldl -lpthread
+LIBS=-levent -ldl -lpthread -L$(ROOTDIR)/lib/rb -lmstrb
 INC=$(ROOTDIR)/inc
 #INC+=-I/usr/include/glib-2.0/
 
@@ -11,14 +11,16 @@ OBJ_FILES= $(patsubst %.c,${BUILDDIR}/%.o,${SOURCES})
 
 MST_FLAGS=-D_EVENT_HAVE_PTHREADS
 MST_FLAGS+=-D__DEV_TEST__
+MST_FLAGS+=-D__USE_MM__
 
 TARGET=${ROOTDIR}/bin/mstunnel
-CFLAGS=-g -pg -O2 -Wall ${MST_FLAGS}
+CFLAGS=-g -O2 -Wall ${MST_FLAGS}
 CFLAGS+=-I${ROOTDIR}/lib
+CFLAGS+=-I${ROOTDIR}/lib/rb
 CFLAGS+=-I${INC}
 
 all: ${TARGET}
-	gcc -g -pg -o ${TARGET} ${BUILDDIR}/*.o ${LIBS}
+	gcc -g -o ${TARGET} ${BUILDDIR}/*.o ${LIBS}
 
 build:
 	@mkdir -p ${ROOTDIR}/build
