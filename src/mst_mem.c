@@ -6,6 +6,7 @@
 #include "mstunnel.h"
 #include "memmgmt.h"
 #include "mstrb.h"
+#include "mst_jhash.h"
 
 #ifdef __USE_MM__
 static void *(*def_malloc_hook)(size_t size, const void *caller);
@@ -19,6 +20,8 @@ void os_free(void *);
 
 mst_mpool_bucket_t gmpool_slabs[mpool_slab_max];
 mst_mpool_bucket_t gmpool_table[D_MPOOL_TABLE_SIZE];
+
+#define D_MEM_PER_SLAB (10 * 1024 * 1024) // 20 M
 
 mst_mpool_size_map_t gmpool_size_map[] = {
     {32, "size32"},
@@ -102,16 +105,23 @@ int mst_do_fbs_dw(int inval)
     return index;
 }
 
+unsigned inline mst_mpool_hash_fn(unsigned ptr)
+{
+    return jhash_1word(ptr, 0)%D_MPOOL_TABLE_SIZE;
+}
+
 static void mst_mpool_table_insert(mst_mpool_buf_t *mp_node)
 {
     struct rb_node **new;
     struct rb_root *rbr = NULL;
     struct rb_node *parent = NULL;
-    unsigned int key = (unsigned)mp_node->buffer;
-    unsigned int sval = 0;
+    unsigned int key = mst_mpool_hash_fn((unsigned)mp_node->buffer);
+    unsigned int lval = (unsigned)mp_node->buffer;
+    unsigned int rval = 0;
     mst_mpool_bucket_t *mp_bucket;
 
-    mp_bucket = &gmpool_table[(key & 0xFFC00000) >> 22];
+    //mp_bucket = &gmpool_table[(key & 0xFFC00000) >> 22];
+    mp_bucket = &gmpool_table[key];
 
     pthread_mutex_lock(&mp_bucket->b_lock);
     rbr = &mp_bucket->rbr;
@@ -120,20 +130,27 @@ static void mst_mpool_table_insert(mst_mpool_buf_t *mp_node)
 
     while(*new) {
         parent = *new;
-        sval = (unsigned)((mst_mpool_buf_t *)(rb_entry(parent, struct mst_mpool_buf, rbn)))->buffer;
-        sval = ((sval & 0xFFC00000) >> 22);
-        if (key < sval) {
+        rval = (unsigned)((mst_mpool_buf_t *)(rb_entry(parent, struct mst_mpool_buf, rbn)))->buffer;
+        if (lval < rval) {
             new = &parent->rb_left;
         }
         else {
             new = &parent->rb_right;
         }
+#if 0
+        else {
+            fprintf(stderr, "lval[0x%X] == rval[0x%X]\n", lval, rval);
+            goto do_exit;
+        }
+#endif
     }
 
     rb_link_node(&mp_node->rbn, parent, new);
     rb_insert_color(&mp_node->rbn, rbr);
     atomic_inc(&mp_bucket->count);
-    
+
+do_exit:
+
     pthread_mutex_unlock(&mp_bucket->b_lock);
 
     return;
@@ -165,11 +182,19 @@ static void mst_mpool_insert(mst_mpool_buf_t *mp_node)
         else {
             new = &parent->rb_right;
         }
+#if 0
+        else {
+            fprintf(stderr, "key[0x%X] == sval[0x%X]\n", key, sval);
+            goto do_exit;
+        }
+#endif
     }
 
     rb_link_node(&mp_node->rbn, parent, new);
     rb_insert_color(&mp_node->rbn, rbr);
     atomic_inc(&mp_bucket->count);
+
+do_exit:
     pthread_mutex_unlock(&mp_bucket->b_lock);
 
     return;
@@ -241,22 +266,30 @@ mst_lookup_mpool_buf(void *ptr)
     mst_mpool_buf_t *mp_node = NULL;
     struct rb_node *rb_node;
     struct rb_root *rbr = NULL;
-    unsigned int key = (unsigned)ptr;
+    unsigned int key = mst_mpool_hash_fn((unsigned)ptr);
     mst_mpool_bucket_t *mp_bucket;
 
-    mp_bucket = &gmpool_table[(key & 0xFFC00000) >> 22]; // Key is MSB 10-bits of 32-bit address
+    mp_bucket = &gmpool_table[key];
 
     pthread_mutex_lock(&mp_bucket->b_lock);
     rbr = &mp_bucket->rbr;
-    rb_node = rb_first(rbr);
+    //rb_node = rb_first(rbr);
+    rb_node = rbr->rb_node;
 
     while(rb_node) {
         mp_node = rb_entry(rb_node, struct mst_mpool_buf, rbn);
         if (mp_node && (mp_node->buffer == ptr)) {
             rb_erase(rb_node, rbr);
+            atomic_dec(&mp_bucket->count);
             break;
         }
-        rb_node = rb_next(rb_node);
+        if ((unsigned)ptr < (unsigned)mp_node->buffer) {
+            rb_node = rb_node->rb_left;
+        }
+        else {
+            rb_node = rb_node->rb_right;
+        }
+        //rb_node = rb_next(rb_node);
     }
     
     pthread_mutex_unlock(&mp_bucket->b_lock);
@@ -267,9 +300,6 @@ void
 mst_free(void *ptr, const void *caller)
 {
     mst_mpool_buf_t *mp_node;
-    //struct rb_node *rb_node;
-    //struct rb_root *rbr = NULL;
-    //unsigned int key = (unsigned)ptr;
 
     if (!ptr) {
         return;
@@ -281,10 +311,7 @@ mst_free(void *ptr, const void *caller)
         if (!atomic_read(&mp_node->tot_child) && mp_node->head) {
             mp_node->given_size = 0;
             mp_node->who = 0;
-            fprintf(stderr, "Added %p back to pool, caller: %p\n", ptr, caller);
-            //mst_mpool_insert(mp_node, &gmpool_slabs[mp_node->slab_type].rbr);
             mst_mpool_insert(mp_node);
-            //gmpool_slabs[mp_node->slab_type].count++;
         }
         else if(!mp_node->head) {
             mst_mpool_buf_t *parent = (mst_mpool_buf_t *)mp_node->parent;
@@ -292,6 +319,10 @@ mst_free(void *ptr, const void *caller)
             if (atomic_dec_and_test(&parent->tot_child) && !atomic_read(&parent->in_use)) {
                 mst_free(parent->buffer, caller);
             }
+        }
+        else if(atomic_read(&mp_node->tot_child) && mp_node->head) {
+            atomic_dec(&mp_node->in_use);
+            mst_mpool_table_insert(mp_node);
         }
         return;
     }
@@ -317,7 +348,7 @@ mst_malloc(size_t size, const void *caller)
         void *p = NULL;
         // We dnt have large buffers. Ask OS
         p = os_malloc(size);
-        //fprintf(stderr, "Got buffer %p of size %d bytes from OS\n", p, size);
+        fprintf(stderr, "Got buffer %p of size %d bytes from OS\n", p, size);
         return p;
     }
     else {
@@ -338,7 +369,7 @@ recheck:
         void *p = NULL;
         // We have done a full cycle of unavailable slots. Ask OS.
         p = os_malloc (size);
-        //fprintf(stderr, "[max_rechk] Got buffer %p of size %d bytes from OS\n", p, size);
+        fprintf(stderr, "[max_rechk] Got buffer %p of size %d bytes from OS\n", p, size);
         return p;
     }
 
@@ -347,7 +378,7 @@ recheck:
             void *p = NULL;
             // We have done a full cycle of unavailable slots. Ask OS.
             p = os_malloc (size);
-            //fprintf(stderr, "[unavlbl] Got buffer %p of size %d bytes from OS\n", p, size);
+            fprintf(stderr, "[unavlbl] Got buffer %p of size %d bytes from OS\n", p, size);
             return p;
         }
 
@@ -356,6 +387,7 @@ recheck:
         rb_erase(rb_node, &gmpool_slabs[slab].rbr);
         atomic_dec(&gmpool_slabs[slab].count);
         pthread_mutex_unlock(&gmpool_slabs[slab].b_lock);
+        
         mp_node = rb_entry(rb_node, struct mst_mpool_buf, rbn);
         atomic_inc(&mp_node->in_use);
         mst_mpool_rework_buf(rb_node, size);
@@ -422,7 +454,6 @@ void mst_print_mpool_table(void)
     }
 }
 
-#define D_MEM_PER_SLAB (2 * 1024 * 10240) // 20 M
 
 int mst_init_mpool(void)
 {
@@ -471,7 +502,7 @@ os_free(void *ptr)
 {
     __free_hook = def_free_hook;
     free(ptr);
-    __free_hook = mst_free;
+    //__free_hook = mst_free;
 }
 
 void *
@@ -481,7 +512,7 @@ os_malloc(size_t size)
 
     __malloc_hook = def_malloc_hook;
     p = malloc(size);
-    __malloc_hook = mst_malloc;
+    //__malloc_hook = mst_malloc;
 
     return p;
 }
@@ -510,8 +541,8 @@ mst_memmgmt_init(void)
     def_memalign_hook = __memalign_hook;
 
     // Only malloc and free are over-loaded
-    __malloc_hook = mst_malloc;
-    __free_hook = mst_free;
+    //__malloc_hook = mst_malloc;
+    //__free_hook = mst_free;
     //__realloc_hook = mst_realloc;
     //__memalign_hook = mst_memalign;
 #endif

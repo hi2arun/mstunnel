@@ -126,6 +126,7 @@ int mst_remove_mnp_by_nw_id (int nw_id, int mnp_id)
                 break;
             }
         }
+        // Note: Lock was acquired in mst_mnp_by_nw_id()
         pthread_mutex_unlock(&nw_conn->n_lock);
         if (0 == atomic_read(&nw_conn->ref_cnt)) {
             pthread_mutex_lock(&mst_nw_conn_bkt->b_lock);
@@ -191,6 +192,7 @@ int mst_insert_mnp_by_nw_id (int nw_id, int mnp_id)
                 }
             }
         }
+        // Lock was acquired by mst_mnp_by_nw_id()
         pthread_mutex_unlock(&nw_conn->n_lock);
     }
 

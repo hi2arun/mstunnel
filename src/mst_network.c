@@ -127,6 +127,9 @@ void mst_tun_read(mst_nw_peer_t *pmnp)
         mst_insert_tun_queue(MST_TUN_Q, pmnp);
         i = 1;
     }
+    else {
+        //fprintf(stderr, "Currently in epoll-tun read\n");
+    }
     pthread_mutex_unlock(&pmnp->ref_lock);
     if (!i) {
         fprintf(stderr, "Spurious EPOLLIN for tun!!\n");
@@ -420,6 +423,9 @@ void mst_nw_read(mst_nw_peer_t *pmnp)
         mst_insert_nw_queue(MST_SCTP_Q, pmnp);
         i = 1;
     }
+    else {
+        //fprintf(stderr, "Currently in epoll-nw read\n");
+    }
     pthread_mutex_unlock(&pmnp->ref_lock);
     if (!i) {
         fprintf(stderr, "Spurious EPOLLIN for nw!!\n");
@@ -477,6 +483,7 @@ read_again:
         return 0;
     }
     if (rlen == 0) {
+        fprintf(stderr, "Error: %s\n", strerror(errno));
         M_MNP_REF_DOWN_AND_FREE(pmnp);
         return -1;
     }
@@ -614,6 +621,7 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
         evtimer_add(mnp[cfd].mst_td->te, &mnp[cfd].mst_td->timeo);
         
         mst_epoll_events (&mnp[cfd], EPOLL_CTL_ADD, (EPOLLIN|EPOLLET));
+        fprintf(stderr, "Added fd '%d' to epoll\n", mnp[cfd].mst_fd);
         //mst_epoll_events (&mnp[cfd], EPOLL_CTL_ADD, (EPOLLIN));
     }
     else {

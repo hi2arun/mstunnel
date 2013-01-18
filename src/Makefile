@@ -17,6 +17,7 @@ TARGET=${ROOTDIR}/bin/mstunnel
 CFLAGS=-g -O2 -Wall ${MST_FLAGS}
 CFLAGS+=-I${ROOTDIR}/lib
 CFLAGS+=-I${ROOTDIR}/lib/rb
+CFLAGS+=-I${ROOTDIR}/lib/ds
 CFLAGS+=-I${INC}
 
 all: ${TARGET}

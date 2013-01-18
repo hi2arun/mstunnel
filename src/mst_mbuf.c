@@ -21,7 +21,7 @@ mem_slot_details_t msd[mst_buf_unk] = {
 };
 
 //#define D_MEM_SIZE_PER_CHAIN (1024 * 10240) // 10 M
-#define D_MEM_SIZE_PER_CHAIN (1024 * 10240) // 10 M
+#define D_MEM_SIZE_PER_CHAIN (1024 * 1024 * 2) // 10 M
 
 int mst_add_mbuf_to_inuse(int slot, mst_buffer_t *__mbuf)
 {
