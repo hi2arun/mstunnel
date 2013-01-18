@@ -375,20 +375,24 @@ mst_nw_peer_t *mst_get_next_fd(int nw_id)
 {
     mst_nw_conn_t *nw_conn = mst_mnp_by_nw_id(nw_id);
     mst_nw_peer_t *pmnp;
+    mst_nw_peer_t *curr_pmnp;
     int curr_slot = 0;
     int index = 0;
     int curr_pkts = 0;
+    int avbl_link = 0;
 
     if (!nw_conn) {
         fprintf(stderr, "[WARNING] No NW-CONN available for nw id 0x%X\n", nw_id);
         return NULL;
     }
     curr_slot = nw_conn->curr_slot;
+    curr_pmnp = (mst_nw_peer_t *)(nw_conn->mnp_slots[curr_slot].mnp_id);
 
     for (index = 0; index < D_NW_TOT_LINKS; index++) {
         if (!nw_conn->mnp_slots[curr_slot].slot_available) {
             pmnp = (mst_nw_peer_t *)(nw_conn->mnp_slots[curr_slot].mnp_id);
             curr_pkts = atomic_read(&pmnp->mst_nwp.xmit_curr_pkts);
+            avbl_link++;
             if (curr_pkts) {
                 atomic_dec(&pmnp->mst_nwp.xmit_curr_pkts);
                 nw_conn->curr_slot = curr_slot;
@@ -402,6 +406,11 @@ mst_nw_peer_t *mst_get_next_fd(int nw_id)
     }
         
     pthread_mutex_unlock(&nw_conn->n_lock); // lock was acquired by mst_mnp_by_nw_id()
-    fprintf(stderr, "[WARNING] No NW-CONN available for nw id 0x%X\n", nw_id);
+    if (avbl_link > 1) {
+        fprintf(stderr, "[WARNING] exit No NW-CONN available for nw id 0x%X\n", nw_id);
+    }
+    else {
+        return curr_pmnp;
+    }
     return NULL;
 }

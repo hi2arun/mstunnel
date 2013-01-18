@@ -102,6 +102,7 @@ int mst_init_test_tuple(mst_csi_t **mt)
     pmt->nw_parms.xmit_curr_cnt = 0;
     pmt->nw_parms.xmit_curr_stream = 0;
 
+    return 0;
 
     pmt = (pmt + 1);
     pmt->__next = NULL;
@@ -156,7 +157,7 @@ int mst_config_init(void)
     mst_global_opts.mst_ses.sctp_association_event = 1;
     mst_global_opts.mst_ses.sctp_shutdown_event = 1;
 
-    mst_global_opts.mst_tuple_cnt = 2;
+    mst_global_opts.mst_tuple_cnt = 1;
     mst_global_opts.mst_sk_backlog = D_SRV_BACKLOG; 
 
 #ifdef __DEV_TEST__
