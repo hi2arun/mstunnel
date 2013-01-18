@@ -83,7 +83,7 @@ int mst_insert_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsign
     mst_ip_tuple_t *temp_tuple;
 
 
-    ip_tuple = (mst_ip_tuple_t *)malloc(sizeof(mst_ip_tuple_t));
+    ip_tuple = (mst_ip_tuple_t *)mst_malloc(sizeof(mst_ip_tuple_t), __func__);
     assert(ip_tuple);
 
     ip_tuple->next = NULL;
@@ -116,7 +116,7 @@ int mst_insert_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsign
 
         temp_tuple = mst_nw_ip_bkt->tail->prev; // New tail
         temp_tuple->next = NULL;
-        free(mst_nw_ip_bkt->tail); // free old tail
+        mst_free(mst_nw_ip_bkt->tail, __func__); // free old tail
         mst_nw_ip_bkt->tail = temp_tuple; // Set new tail
     }
     else {

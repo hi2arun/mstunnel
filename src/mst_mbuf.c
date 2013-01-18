@@ -4,6 +4,9 @@
 mst_mem_config_t mst_mbuf_inuse_slots[mst_buf_unk];
 mst_mem_config_t mst_mbuf_free_slots[mst_buf_unk];
 
+atomic_t mbuf_malloc_cnt;
+atomic_t mbuf_free_cnt;
+
 typedef struct mem_slot_details {
     char mem_slot_name[D_NAME_SIZ + 1];
     int size_in_bytes;
@@ -59,7 +62,7 @@ chk:
 
 void mst_free_iov(struct iovec *iov)
 {
-    free(iov);
+    mst_free(iov, __func__);
     return;
 }
 
@@ -101,7 +104,7 @@ mst_mbuf_to_iov(mst_buffer_t *mbuf, int *iov_len, int id_flag)
 
     assert((id_flag != 0) || (id_flag != 1));
 
-    mbuf->iov = (struct iovec*)malloc(sizeof(struct iovec) * (mbuf->frags_count + id_flag /*SCTP Code*/ + 1 /*first buffer*/));
+    mbuf->iov = (struct iovec*)mst_malloc(sizeof(struct iovec) * (mbuf->frags_count + id_flag /*SCTP Code*/ + 1 /*first buffer*/), __func__);
     if (!mbuf->iov) {
         return NULL;
     }
@@ -196,7 +199,7 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     mbuf->mfrags = NULL;
     mbuf->mfrags_tail = NULL;
     if (mbuf->iov) {
-        free(mbuf->iov);
+        mst_free(mbuf->iov, __func__);
         mbuf->iov = NULL;
     }
     mbuf->iov_len = 0;
@@ -344,14 +347,17 @@ mst_membuf_init()
         pthread_mutex_init(&mst_mbuf_inuse_slots[index].mem_lock, NULL);
 
         for (cntr = 0; cntr < mst_mbuf_free_slots[index].__mbuf_chain.mbuf_count; cntr++) {
-            mst_buffer_t *node = (mst_buffer_t *)malloc(sizeof(mst_buffer_t));
+            mst_buffer_t *node = (mst_buffer_t *)mst_malloc(sizeof(mst_buffer_t), __func__);
             if (!node) {
                 fprintf(stderr, "FATAL: malloc failed\n");
                 assert(node);
             }
+            atomic_inc(&mbuf_malloc_cnt);
             node->buf_type = index;
             node->__which = &mst_mbuf_free_slots[index];
-            node->buffer = (void *)malloc(mst_mbuf_free_slots[index].size_per_block);
+            node->buffer = (void *)mst_malloc(mst_mbuf_free_slots[index].size_per_block, __func__);
+            assert(node->buffer);
+            atomic_inc(&mbuf_malloc_cnt);
             node->buf_len = mst_mbuf_free_slots[index].size_per_block;
             node->mfrags_tail = node->mfrags = NULL;
             node->iov = NULL;

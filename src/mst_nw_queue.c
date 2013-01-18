@@ -116,7 +116,7 @@ mst_buf_q_t *mst_mbuf_dequeue_tail(mst_nw_peer_t *pmnp)
 
 int mst_insert_tun_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
 {
-    mst_nw_q_t *qelm = malloc(sizeof(mst_nw_q_t));
+    mst_nw_q_t *qelm = mst_malloc(sizeof(mst_nw_q_t), __func__);
     assert(qelm);
     memset(qelm, 0, sizeof(mst_nw_q_t));
     qelm->q_type = q_type;
@@ -135,7 +135,7 @@ int mst_insert_tun_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
 
 int mst_insert_tun_wq(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
 {
-    mst_nw_q_t *qelm = malloc(sizeof(mst_nw_q_t));
+    mst_nw_q_t *qelm = mst_malloc(sizeof(mst_nw_q_t), __func__);
     assert(qelm);
     memset(qelm, 0, sizeof(mst_nw_q_t));
     qelm->q_type = q_type;
@@ -157,7 +157,7 @@ int mst_insert_mbuf_q(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int len)
         return -1;
     }
     
-    qelm = malloc(sizeof(mst_buf_q_t));
+    qelm = mst_malloc(sizeof(mst_buf_q_t), __func__);
     assert(qelm);
     memset(qelm, 0, sizeof(mst_buf_q_t));
     qelm->wlen = len;
@@ -176,7 +176,7 @@ int mst_insert_mbuf_q(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int len)
 
 int mst_insert_nw_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
 {
-    mst_nw_q_t *qelm = malloc(sizeof(mst_nw_q_t));
+    mst_nw_q_t *qelm = mst_malloc(sizeof(mst_nw_q_t), __func__);
     assert(qelm);
     memset(qelm, 0, sizeof(mst_nw_q_t));
     qelm->q_type = q_type;
@@ -196,7 +196,7 @@ int mst_insert_nw_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
 
 int mst_insert_nw_wq(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
 {
-    mst_nw_q_t *qelm = malloc(sizeof(mst_nw_q_t));
+    mst_nw_q_t *qelm = mst_malloc(sizeof(mst_nw_q_t), __func__);
     assert(qelm);
     memset(qelm, 0, sizeof(mst_nw_q_t));
     qelm->q_type = q_type;
@@ -249,7 +249,7 @@ void *mst_loop_tun_queue(void *arg)
         
         if (-1 == mst_insert_epoll_queue(qelm)) {
             fprintf(stderr, "[TUN] Freeing qelm...\n");
-            free(qelm);
+            mst_free(qelm, __func__);
         }
         atomic_inc(&tun_out);
     }
@@ -277,7 +277,7 @@ void *mst_loop_tun_wq(void *arg)
         mst_tun_write(qelm->pmnp);
         //M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
         
-        free(qelm);
+        mst_free(qelm, __func__);
     }
 
 }
@@ -306,7 +306,7 @@ void *mst_loop_nw_queue(void *arg)
 
         if (-1 == mst_insert_epoll_queue(qelm)) {
             fprintf(stderr, "[NW] Freeing qelm...\n");
-            free(qelm);
+            mst_free(qelm, __func__);
         }
         atomic_inc(&nw_out);
     }
@@ -332,7 +332,7 @@ void *mst_loop_nw_wq(void *arg)
 
         mst_nw_write(qelm->pmnp);
         //M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
-        free(qelm);
+        mst_free(qelm, __func__);
     }
 }
 

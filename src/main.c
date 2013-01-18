@@ -18,7 +18,6 @@ mst_opts_t mst_global_opts;
 
 extern atomic_t tun_in, tun_out;
 extern atomic_t nw_in, nw_out;
-
 extern atomic_t tun_reads, tun_writes;
 extern atomic_t nw_reads, nw_writes;
 
@@ -40,7 +39,7 @@ int mst_mm_init(void)
     mst_memmgmt_init();
     mst_membuf_init();
     //event_set_mem_functions(__mst_malloc, __mst_realloc, __mst_free);
-    //event_set_mem_functions(mst_malloc, realloc, mst_free);
+    event_set_mem_functions(os_malloc, realloc, os_free);
     return 0;
 }
 
@@ -66,7 +65,7 @@ mst_get_tuple_config(void)
 int mst_init_test_tuple(mst_csi_t **mt)
 {
     mst_csi_t *pmt = NULL;
-    *mt = (mst_csi_t *)malloc(sizeof(mst_csi_t) * mst_global_opts.mst_tuple_cnt);
+    *mt = (mst_csi_t *)mst_malloc(sizeof(mst_csi_t) * mst_global_opts.mst_tuple_cnt, __func__);
     if (!(*mt)) {
         fprintf(stderr, "%d: Malloc failed\n", __LINE__);
         return -1;
@@ -75,12 +74,12 @@ int mst_init_test_tuple(mst_csi_t **mt)
     pmt = *mt;
 
     pmt->__next = NULL;
-    pmt->client = (mst_node_info_t *)malloc(sizeof(mst_node_info_t));
+    pmt->client = (mst_node_info_t *)mst_malloc(sizeof(mst_node_info_t), __func__);
     if (!pmt->client) {
         fprintf(stderr, "%d: Malloc failed\n", __LINE__);
         return -1;
     }
-    pmt->server = (mst_node_info_t *)malloc(sizeof(mst_node_info_t));
+    pmt->server = (mst_node_info_t *)mst_malloc(sizeof(mst_node_info_t), __func__);
     if (!pmt->server) {
         fprintf(stderr, "%d: Malloc failed\n", __LINE__);
         return -1;
@@ -106,12 +105,12 @@ int mst_init_test_tuple(mst_csi_t **mt)
 
     pmt = (pmt + 1);
     pmt->__next = NULL;
-    pmt->client = (mst_node_info_t *)malloc(sizeof(mst_node_info_t));
+    pmt->client = (mst_node_info_t *)mst_malloc(sizeof(mst_node_info_t), __func__);
     if (!pmt->client) {
         fprintf(stderr, "%d: Malloc failed\n", __LINE__);
         return -1;
     }
-    pmt->server = (mst_node_info_t *)malloc(sizeof(mst_node_info_t));
+    pmt->server = (mst_node_info_t *)mst_malloc(sizeof(mst_node_info_t), __func__);
     if (!pmt->server) {
         fprintf(stderr, "%d: Malloc failed\n", __LINE__);
         return -1;

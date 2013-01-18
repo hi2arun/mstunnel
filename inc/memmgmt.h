@@ -48,6 +48,9 @@ void mst_free(void *ptr, const void *caller);
 void *mst_realloc(void *ptr, size_t size, const void *caller);
 void *mst_memalign(size_t alignment, size_t size, const void *caller);
 
+void *os_malloc(size_t size);
+void os_free(void *ptr);
+
 void *(*__mst_malloc)(size_t size);
 void (*__mst_free)(void *ptr);
 void *(*__mst_realloc)(void *ptr, size_t size);

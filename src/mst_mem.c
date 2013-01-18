@@ -18,6 +18,12 @@ static void *(*def_memalign_hook)(size_t alignment, size_t size, const void *cal
 void *os_malloc(size_t size);
 void os_free(void *);
 
+
+atomic_t malloc_cnt;
+atomic_t free_cnt;
+atomic_t os_malloc_cnt;
+atomic_t os_free_cnt;
+
 mst_mpool_bucket_t gmpool_slabs[mpool_slab_max];
 mst_mpool_bucket_t gmpool_table[D_MPOOL_TABLE_SIZE];
 
@@ -134,15 +140,13 @@ static void mst_mpool_table_insert(mst_mpool_buf_t *mp_node)
         if (lval < rval) {
             new = &parent->rb_left;
         }
-        else {
+        else if (lval > rval) {
             new = &parent->rb_right;
         }
-#if 0
         else {
-            fprintf(stderr, "lval[0x%X] == rval[0x%X]\n", lval, rval);
+            //fprintf(stderr, "lval[0x%X] == rval[0x%X]\n", lval, rval);
             goto do_exit;
         }
-#endif
     }
 
     rb_link_node(&mp_node->rbn, parent, new);
@@ -179,15 +183,13 @@ static void mst_mpool_insert(mst_mpool_buf_t *mp_node)
         if (key < sval) {
             new = &parent->rb_left;
         }
-        else {
+        else if (key > sval) {
             new = &parent->rb_right;
         }
-#if 0
         else {
-            fprintf(stderr, "key[0x%X] == sval[0x%X]\n", key, sval);
+            //fprintf(stderr, "key[0x%X] == sval[0x%X]\n", key, sval);
             goto do_exit;
         }
-#endif
     }
 
     rb_link_node(&mp_node->rbn, parent, new);
@@ -289,7 +291,6 @@ mst_lookup_mpool_buf(void *ptr)
         else {
             rb_node = rb_node->rb_right;
         }
-        //rb_node = rb_next(rb_node);
     }
     
     pthread_mutex_unlock(&mp_bucket->b_lock);
@@ -324,6 +325,7 @@ mst_free(void *ptr, const void *caller)
             atomic_dec(&mp_node->in_use);
             mst_mpool_table_insert(mp_node);
         }
+        atomic_inc(&free_cnt);
         return;
     }
     //fprintf(stderr, "Perhaps %p belongs to OS. Freeing it\n", ptr);
@@ -394,6 +396,7 @@ recheck:
         mst_mpool_table_insert(mp_node);
 
         mp_node->who = (int)caller;
+        atomic_inc(&malloc_cnt);
         return mp_node->buffer;
     }
     else {
@@ -500,9 +503,13 @@ int mst_init_mpool(void)
 void
 os_free(void *ptr)
 {
-    __free_hook = def_free_hook;
+    //__malloc_hook = def_malloc_hook;
+    //__free_hook = def_free_hook;
     free(ptr);
+    //__malloc_hook = mst_malloc;
     //__free_hook = mst_free;
+    
+    atomic_inc(&os_free_cnt);
 }
 
 void *
@@ -510,9 +517,13 @@ os_malloc(size_t size)
 {
     void *p;
 
-    __malloc_hook = def_malloc_hook;
+    //__malloc_hook = def_malloc_hook;
+    //__free_hook = def_free_hook;
     p = malloc(size);
     //__malloc_hook = mst_malloc;
+    //__free_hook = mst_free;
+
+    atomic_inc(&os_malloc_cnt);
 
     return p;
 }

@@ -105,6 +105,7 @@ void mst_tun_write(mst_nw_peer_t *pmnp)
     while (NULL != (qelm = mst_mbuf_dequeue_tail(pmnp))) {
         mst_do_tun_write(pmnp, qelm->mbuf, qelm->wlen);
         mst_dealloc_mbuf(qelm->mbuf);
+        mst_free(qelm, __func__);
         count++;
     }
 
@@ -364,10 +365,12 @@ void mst_nw_write(mst_nw_peer_t *pmnp)
             mst_epoll_events (pmnp, EPOLL_CTL_MOD, (pmnp->mst_ef | (EPOLLOUT)));
             pmnp->mst_curr &= ~EPOLLOUT;
             pthread_mutex_unlock(&pmnp->ref_lock);
+            mst_free(qelm, __func__);
             return;
         }
         else {
             mst_dealloc_mbuf(qelm->mbuf);
+            mst_free(qelm, __func__);
         }
         count++;
     }
@@ -383,22 +386,22 @@ int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
         close(pmnp->mst_fd);
         if (pmnp->mst_td) {
             event_free(pmnp->mst_td->te);
-            free(pmnp->mst_td);
+            mst_free(pmnp->mst_td, __func__);
             pmnp->mst_td = NULL;
         }
         if (pmnp->mst_cbuf) {
             mst_dealloc_mbuf(pmnp->mst_cbuf);
         }
-        //free(pmnp->mst_ciov);
+        //mst_free(pmnp->mst_ciov);
 
         if(0 && pmnp->mst_mt) {
             if(pmnp->mst_mt->client) {
-                free(pmnp->mst_mt->client);
+                mst_free(pmnp->mst_mt->client, __func__);
             }
             if(pmnp->mst_mt->server) {
-                free(pmnp->mst_mt->server);
+                mst_free(pmnp->mst_mt->server, __func__);
             }
-            free(pmnp->mst_mt);
+            mst_free(pmnp->mst_mt, __func__);
         }
         mst_remove_mnp_by_nw_id(ntohl(pmnp->nw_id), (int)pmnp);
         //mst_destroy_mbuf_q(&pmnp->mst_wq);
@@ -454,7 +457,7 @@ read_again:
 
     //fprintf(stderr, "%s(): pmnp: %p, fd: %d\n", __func__, pmnp, pmnp->mst_fd);
 
-    nw_header = (mst_nw_header_t *) malloc(sizeof(mst_nw_header_t));
+    nw_header = (mst_nw_header_t *) mst_malloc(sizeof(mst_nw_header_t), __func__);
     assert(nw_header);
 
     memset(nw_header, 0, sizeof(mst_nw_header_t));
@@ -494,7 +497,7 @@ read_again:
     }
 
     if (rv != 5) {
-        free(nw_header);
+        mst_free(nw_header, __func__);
         mst_dealloc_mbuf(mbuf);
     }
     else {
@@ -521,7 +524,7 @@ int mst_setup_tunnel(mst_nw_peer_t *pmnp)
     evutil_make_socket_nonblocking(tunfd);
     
     if(!mnp[tunfd].mst_connection) {
-        mnp[tunfd].mst_connection = (mst_conn_t *) malloc(sizeof(mst_conn_t));
+        mnp[tunfd].mst_connection = (mst_conn_t *) mst_malloc(sizeof(mst_conn_t), __func__);
         assert(mnp[tunfd].mst_connection);
         pthread_mutex_init(&mnp[tunfd].ref_lock, NULL);
         TAILQ_INIT(&mnp[tunfd].mst_wq);
@@ -574,7 +577,7 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
         fprintf(stderr, "Accepted conn[%d] from '%s:%hu'\n", cfd, inet_ntoa(client.sin_addr), client.sin_port);
 
         if(!mnp[cfd].mst_connection) {
-            mnp[cfd].mst_connection = (mst_conn_t *) malloc(sizeof(mst_conn_t));
+            mnp[cfd].mst_connection = (mst_conn_t *) mst_malloc(sizeof(mst_conn_t), __func__);
             assert(mnp[cfd].mst_connection);
             pthread_mutex_init(&mnp[cfd].ref_lock, NULL);
             TAILQ_INIT(&mnp[cfd].mst_wq);
@@ -583,10 +586,10 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
             memset(mnp[cfd].mst_connection, 0, sizeof(mst_conn_t));
         }
 
-        mnp[cfd].mst_mt = (mst_csi_t *)malloc(sizeof(mst_csi_t));
+        mnp[cfd].mst_mt = (mst_csi_t *)mst_malloc(sizeof(mst_csi_t), __func__);
         assert(mnp[cfd].mst_mt);
         memset(mnp[cfd].mst_mt, 0, sizeof(mst_csi_t));
-        mnp[cfd].mst_mt->client = (mst_node_info_t *)malloc(sizeof(mst_node_info_t));
+        mnp[cfd].mst_mt->client = (mst_node_info_t *)mst_malloc(sizeof(mst_node_info_t), __func__);
         assert(mnp[cfd].mst_mt->client);
         mnp[cfd].mst_mt->client->host_ipv4 = client.sin_addr.s_addr;
         mnp[cfd].mst_mt->client->port = client.sin_port;
@@ -601,7 +604,7 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
         mnp[cfd].mnp_flags = M_MNP_SET_STATE(mnp[cfd].mnp_flags, D_MNP_STATE_CONNECTED);
         
         if (!mnp[cfd].mst_td) {
-            mnp[cfd].mst_td = (mst_timer_data_t *)malloc(sizeof(mst_timer_data_t));
+            mnp[cfd].mst_td = (mst_timer_data_t *)mst_malloc(sizeof(mst_timer_data_t), __func__);
             assert(mnp[cfd].mst_td);
         }
         mnp[cfd].mst_td->type = MST_MNP;
@@ -660,18 +663,18 @@ int mst_setup_network(void)
     assert(meb.epfd > 0);
     meb.ev.events = EPOLLIN;
     
-    meb.evb = (struct epoll_event *)malloc(sizeof(struct epoll_event) * (D_MAX_PEER_CNT + mst_global_opts.mst_tuple_cnt));
+    meb.evb = (struct epoll_event *)mst_malloc(sizeof(struct epoll_event) * (D_MAX_PEER_CNT + mst_global_opts.mst_tuple_cnt), __func__);
     assert(meb.evb);
     meb.ev_cnt = (D_MAX_PEER_CNT + mst_global_opts.mst_tuple_cnt);
 
-    mnp_l = (mst_nw_peer_t *)malloc(sizeof(mst_nw_peer_t) * mst_global_opts.mst_tuple_cnt);
+    mnp_l = (mst_nw_peer_t *)mst_malloc(sizeof(mst_nw_peer_t) * mst_global_opts.mst_tuple_cnt, __func__);
     
     assert(mnp_l);
 
     memset(mnp_l, 0, sizeof(mst_nw_peer_t) * mst_global_opts.mst_tuple_cnt);
 
     for(index = 0; index < mst_global_opts.mst_tuple_cnt; index++) {
-        mnp_l[index].mst_connection = (mst_conn_t *)malloc(sizeof(mst_conn_t));
+        mnp_l[index].mst_connection = (mst_conn_t *)mst_malloc(sizeof(mst_conn_t), __func__);
         assert(mnp_l[index].mst_connection);
         memset(mnp_l[index].mst_connection, 0, sizeof(mst_conn_t));
         mnp_l[index].mst_fd = mst_create_socket();
@@ -711,7 +714,7 @@ int
 mst_do_connect(mst_nw_peer_t *pmnp)
 {
     //fprintf(stderr, "%s(): __ENTRY__\n", __func__);
-    pmnp->mst_td = (mst_timer_data_t *)malloc(sizeof(mst_timer_data_t));
+    pmnp->mst_td = (mst_timer_data_t *)mst_malloc(sizeof(mst_timer_data_t), __func__);
     assert(pmnp->mst_td);
     pmnp->mst_td->type = MST_MNP;
     pmnp->mst_td->timeo.tv_sec = 5;
@@ -810,7 +813,7 @@ void *mst_nw_thread(void *arg)
                 //mst_epoll_events (qelm->pmnp, EPOLL_CTL_MOD, (qelm->pmnp->mst_ef | (EPOLLIN)));
                 qelm->pmnp->mst_curr &= ~EPOLLIN;
                 pthread_mutex_unlock(&qelm->pmnp->ref_lock);
-                free(qelm);
+                mst_free(qelm, __func__);
             }
             if (!count) {
             }
@@ -904,7 +907,7 @@ int mst_init_network(void)
     pthread_create(&pt_nw_thread, NULL, mst_nw_thread, NULL);
     sleep(2);
 
-    mnp = (mst_nw_peer_t *) malloc(D_MAX_PEER_CNT * sizeof(mst_nw_peer_t));
+    mnp = (mst_nw_peer_t *) mst_malloc(D_MAX_PEER_CNT * sizeof(mst_nw_peer_t), __func__);
     assert(mnp);
     if (mst_global_opts.mst_config.mst_mode) {
         memset(mnp, 0, D_MAX_PEER_CNT * sizeof(mst_nw_peer_t));
