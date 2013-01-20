@@ -25,6 +25,7 @@
 #include <sys/queue.h>
 #include <sys/epoll.h>
 #include <signal.h>
+#include <sys/mman.h>
 
 #include "mst_mbuf.h"
 #include "mst_constants.h"

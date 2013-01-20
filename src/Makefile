@@ -1,7 +1,7 @@
 #Makefile for mstunnel
 #
 ROOTDIR=..
-LIBS=-levent -ldl -lpthread -L$(ROOTDIR)/lib/rb -lmstrb
+LIBS=-levent -ldl -lrt -lpthread -L$(ROOTDIR)/lib/rb -lmstrb
 INC=$(ROOTDIR)/inc
 #INC+=-I/usr/include/glib-2.0/
 

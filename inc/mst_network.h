@@ -9,10 +9,10 @@
 #define D_IPV4 4
 #define D_IPV4_STR_FMT "%u.%u.%u.%u"
 #define M_NIPQUAD(x) \
-    (unsigned)*(((char *)x) + 0), \
-    (unsigned)*(((char *)x) + 1), \
-    (unsigned)*(((char *)x) + 2), \
-    (unsigned)*(((char *)x) + 3)
+    (unsigned char)*((char *)x + 0), \
+    (unsigned char)*((char *)x + 1), \
+    (unsigned char)*((char *)x + 2), \
+    (unsigned char)*((char *)x + 3)
 
 #define D_NW_CONN_TABLE_SIZE 512
 #define D_NW_TOT_LINKS 2

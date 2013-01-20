@@ -9,20 +9,20 @@
 #include "mst_jhash.h"
 
 #ifdef __USE_MM__
-static void *(*def_malloc_hook)(size_t size, const void *caller);
-static void (*def_free_hook)(void *ptr, const void *caller);
-static void *(*def_realloc_hook)(void *ptr, size_t size, const void *caller);
-static void *(*def_memalign_hook)(size_t alignment, size_t size, const void *caller);
+//static void *(*def_malloc_hook)(size_t size, const void *caller);
+//static void (*def_free_hook)(void *ptr, const void *caller);
+//static void *(*def_realloc_hook)(void *ptr, size_t size, const void *caller);
+//static void *(*def_memalign_hook)(size_t alignment, size_t size, const void *caller);
 #endif
 
 void *os_malloc(size_t size);
 void os_free(void *);
 
 
-atomic_t malloc_cnt;
-atomic_t free_cnt;
-atomic_t os_malloc_cnt;
-atomic_t os_free_cnt;
+atomic_t *malloc_cnt;
+atomic_t *free_cnt;
+atomic_t *os_malloc_cnt;
+atomic_t *os_free_cnt;
 
 mst_mpool_bucket_t gmpool_slabs[mpool_slab_max];
 mst_mpool_bucket_t gmpool_table[D_MPOOL_TABLE_SIZE];
@@ -325,7 +325,7 @@ mst_free(void *ptr, const void *caller)
             atomic_dec(&mp_node->in_use);
             mst_mpool_table_insert(mp_node);
         }
-        atomic_inc(&free_cnt);
+        atomic_inc(free_cnt);
         return;
     }
     //fprintf(stderr, "Perhaps %p belongs to OS. Freeing it\n", ptr);
@@ -396,7 +396,7 @@ recheck:
         mst_mpool_table_insert(mp_node);
 
         mp_node->who = (int)caller;
-        atomic_inc(&malloc_cnt);
+        atomic_inc(malloc_cnt);
         return mp_node->buffer;
     }
     else {
@@ -469,11 +469,11 @@ int mst_init_mpool(void)
 
         //for(index_y = 0; index_y < D_MPOOL_NODES_PER_SLAB; index_y++) {
         for(index_y = 0; index_y < (D_MEM_PER_SLAB/gmpool_size_map[index].size); index_y++) {
-            mp_node = (mst_mpool_buf_t *)malloc(sizeof(mst_mpool_buf_t));
+            mp_node = (mst_mpool_buf_t *)os_malloc(sizeof(mst_mpool_buf_t));
             assert(mp_node);
             rb_init_node(&mp_node->rbn);
             mp_node->size = gmpool_size_map[index].size;
-            mp_node->buffer = (void *)malloc(mp_node->size);
+            mp_node->buffer = (void *)os_malloc(mp_node->size);
             mp_node->given_size = 0;
             mp_node->head = 1;
             mp_node->parent = 0;
@@ -509,7 +509,7 @@ os_free(void *ptr)
     //__malloc_hook = mst_malloc;
     //__free_hook = mst_free;
     
-    atomic_inc(&os_free_cnt);
+    atomic_inc(os_free_cnt);
 }
 
 void *
@@ -523,7 +523,8 @@ os_malloc(size_t size)
     //__malloc_hook = mst_malloc;
     //__free_hook = mst_free;
 
-    atomic_inc(&os_malloc_cnt);
+    //atomic_inc(&os_malloc_cnt);
+    atomic_inc(os_malloc_cnt);
 
     return p;
 }
@@ -544,12 +545,16 @@ mst_memmgmt_init(void)
     }
     fprintf (stderr, "%p, %p, %p, %p\n", __mst_malloc, __mst_free, __mst_realloc, __mst_memalign);
 #else
+    mst_register_cntr("os_malloc_cnt", &os_malloc_cnt);
+    mst_register_cntr("malloc_cnt", &malloc_cnt);
+    mst_register_cntr("os_free_cnt", &os_free_cnt);
+    mst_register_cntr("free_cnt", &free_cnt);
     mst_init_mpool();
 
-    def_malloc_hook = __malloc_hook;
-    def_free_hook = __free_hook;
-    def_realloc_hook = __realloc_hook;
-    def_memalign_hook = __memalign_hook;
+    //def_malloc_hook = __malloc_hook;
+    //def_free_hook = __free_hook;
+    //def_realloc_hook = __realloc_hook;
+    //def_memalign_hook = __memalign_hook;
 
     // Only malloc and free are over-loaded
     //__malloc_hook = mst_malloc;

@@ -3,6 +3,7 @@
 #include "mst_network.h"
 #include "mst_timer.h"
 #include "mst_tun.h"
+#include "mst_cntrs.h"
 
 extern mst_event_base_t meb;
 
@@ -29,7 +30,7 @@ pthread_cond_t mst_eq_cond;
 #define D_COND_WAIT_TO 5
 #define D_COND_WAIT_W_TO 1
 
-atomic_t tun_in, tun_out;
+atomic_t *tun_in, *tun_out;
 atomic_t nw_in, nw_out;
 
 mst_nw_q_t *mst_tun_dequeue_tail(void)
@@ -128,7 +129,7 @@ int mst_insert_tun_queue(mst_nw_q_type_t q_type, mst_nw_peer_t *pmnp)
     pthread_cond_signal(&tun_rq_cond);
     pthread_mutex_unlock(&tun_rq_lock);
     //fprintf(stderr, "Release TQ lock\n");
-    atomic_inc(&tun_in);
+    atomic_inc(tun_in);
 
     return 0;
 }
@@ -251,7 +252,7 @@ void *mst_loop_tun_queue(void *arg)
             fprintf(stderr, "[TUN] Freeing qelm...\n");
             mst_free(qelm, __func__);
         }
-        atomic_inc(&tun_out);
+        atomic_inc(tun_out);
     }
 
 }
@@ -382,6 +383,9 @@ int mst_init_tun_queue(void)
     for (index = 0; index < 1; index++) {
         pthread_create(&pt_tun_wq[index], NULL, mst_loop_tun_wq, NULL);
     }
+
+    mst_register_cntr("tun_in", &tun_in);
+    mst_register_cntr("tun_out", &tun_out);
 
     return 0;
 }

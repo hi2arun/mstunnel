@@ -382,8 +382,10 @@ void mst_nw_write(mst_nw_peer_t *pmnp)
 
 int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
 {
-    if (pmnp->mst_connection) {
+    mst_nw_peer_t *mnp_pair = NULL;
+    if (pmnp->mst_connection && (-1 != pmnp->mst_fd)) {
         close(pmnp->mst_fd);
+        mnp_pair = (mst_nw_peer_t *)pmnp->mnp_pair;
         if (pmnp->mst_td) {
             event_free(pmnp->mst_td->te);
             mst_free(pmnp->mst_td, __func__);
@@ -403,11 +405,14 @@ int mst_cleanup_mnp(mst_nw_peer_t *pmnp)
             }
             mst_free(pmnp->mst_mt, __func__);
         }
-        mst_remove_mnp_by_nw_id(ntohl(pmnp->nw_id), (int)pmnp);
+        if (D_MNP_TYPE_TUN == M_MNP_TYPE(pmnp->mnp_flags)) {
+            mst_remove_mnp_by_nw_id(ntohl(pmnp->nw_id), (int)pmnp);
+        }
         //mst_destroy_mbuf_q(&pmnp->mst_wq);
         pmnp->mst_fd = -1;
+        mst_cleanup_mnp(mnp_pair);
+        fprintf(stderr, "Cleaning up mnp %p\n", pmnp);
     }
-    fprintf(stderr, "Cleaning up mnp %p\n", pmnp);
 
     return 0;
 
