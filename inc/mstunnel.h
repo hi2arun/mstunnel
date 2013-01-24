@@ -98,13 +98,54 @@ typedef struct mst_opts {
 
 struct mst_timer_data;
 
+typedef enum mst_link_color {
+    MST_LINK_GREEN = 0x1001,
+    MST_LINK_YELLOW,
+    MST_LINK_RED,
+} mst_link_color_t;
+
 typedef struct mst_stat {
-    unsigned long pkts_in;
-    unsigned long pkts_out;
-    unsigned long bytes_in;
-    unsigned long bytes_out;
-    unsigned long tx_error;
-    unsigned long rx_error;
+    unsigned smf_1; // smoothing factor - 1
+    unsigned smf_2; // smoothing factor - 2
+    
+    int *pkts_in;
+    int *pkts_out;
+    int last_pkts_in;
+    int last_pkts_out;
+    int *bytes_in;
+    int *bytes_out;
+    int last_bytes_in;
+    int last_bytes_out;
+    int tx_error;
+    int rx_error;
+
+    int *unack_cnt;
+    int *pending_cnt;
+    int *srtt;
+    int *min_srtt;
+    int *max_srtt;
+    int *avg_srtt;
+
+    int *min_rx_bw;
+    int *max_rx_bw;
+    int *rx_bw;
+    unsigned rx_time;
+    unsigned last_rx_time;
+    
+    int *min_tx_bw;
+    int *max_tx_bw;
+    int *tx_bw;
+    unsigned tx_time;
+    unsigned last_tx_time;
+    unsigned last_tx_clog;
+
+    int curr_sample_cnt;
+    int sample_cnt;
+    int *snd_cnt;
+    int min_snd_cnt;
+    int max_snd_cnt;
+
+    mst_link_color_t link_color;
 } mst_stat_t;
     
 TAILQ_HEAD(mst_mbuf_q, mst_buf_q);
@@ -182,6 +223,11 @@ typedef struct mst_nw_peer {
     mst_config_t *mst_config;
     pthread_mutex_t ref_lock;
     atomic_t ref_cnt;
+
+    void (*mst_epoll_write)(struct mst_nw_peer *pmnp);
+    void (*mst_epoll_read)(struct mst_nw_peer *pmnp);
+    int (*mst_data_write)(struct mst_nw_peer *pmnp, mst_buffer_t *mbuf, int rlen);
+    int (*mst_data_read)(struct mst_nw_peer *pmnp);
 } mst_nw_peer_t;
 
 typedef enum mst_nw_q_type {

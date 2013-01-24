@@ -312,6 +312,65 @@ mst_print_sctp_paddrinfo(struct sctp_paddrinfo *sstat_primary)
     return 0;
 }
 
+int
+mst_calculate_tput(mst_nw_peer_t *pmnp)
+{
+    unsigned time_delta = 0;
+    
+    time_delta = (pmnp->mst_cs.rx_time - pmnp->mst_cs.last_rx_time);
+
+    if (time_delta) {
+        *(pmnp->mst_cs.rx_bw) = (*(pmnp->mst_cs.bytes_in) - pmnp->mst_cs.last_bytes_in)/time_delta;
+        *(pmnp->mst_cs.rx_bw) *= 8; // in bits
+        pmnp->mst_cs.last_bytes_in = *(pmnp->mst_cs.bytes_in);
+        pmnp->mst_cs.last_rx_time = pmnp->mst_cs.rx_time;
+    }
+    else if (!(*(pmnp->mst_cs.bytes_in) - pmnp->mst_cs.last_bytes_in)) {
+        *(pmnp->mst_cs.rx_bw) = 0;
+    }
+    time_delta = (pmnp->mst_cs.tx_time - pmnp->mst_cs.last_tx_time);
+
+    if (time_delta) {
+        *(pmnp->mst_cs.tx_bw) = (*(pmnp->mst_cs.bytes_out) - pmnp->mst_cs.last_bytes_out)/time_delta;
+        *(pmnp->mst_cs.tx_bw) *= 8; // in bits
+        pmnp->mst_cs.last_bytes_out = *(pmnp->mst_cs.bytes_out);
+        pmnp->mst_cs.last_tx_time = pmnp->mst_cs.tx_time;
+    }
+    else if (!(*(pmnp->mst_cs.bytes_out) - pmnp->mst_cs.last_bytes_out)) {
+        *(pmnp->mst_cs.tx_bw) = 0;
+    }
+
+    return;
+}
+
+int 
+mst_compute_congestion(mst_nw_peer_t *pmnp, struct sctp_status *ls)
+{
+    if (!(pmnp->mst_cs.curr_sample_cnt % pmnp->mst_cs.sample_cnt)) {
+        pmnp->mst_cs.curr_sample_cnt = 0;
+        *(pmnp->mst_cs.avg_srtt) /= pmnp->mst_cs.sample_cnt;
+
+        *(pmnp->mst_cs.unack_cnt) = 0;
+        *(pmnp->mst_cs.pending_cnt) = 0;
+    }
+    else {
+        *(pmnp->mst_cs.avg_srtt) += ls->sstat_primary.spinfo_srtt;
+    }
+    if (ls->sstat_primary.spinfo_srtt < *(pmnp->mst_cs.min_srtt)) {
+        *(pmnp->mst_cs.min_srtt) = ls->sstat_primary.spinfo_srtt;
+    }
+    if (!(*(pmnp->mst_cs.min_srtt))) {
+        *(pmnp->mst_cs.min_srtt) = ls->sstat_primary.spinfo_srtt;
+    }
+    if (ls->sstat_primary.spinfo_srtt > *(pmnp->mst_cs.max_srtt)) {
+        *(pmnp->mst_cs.max_srtt) = ls->sstat_primary.spinfo_srtt;
+    }
+    *(pmnp->mst_cs.srtt) = ls->sstat_primary.spinfo_srtt;
+    *(pmnp->mst_cs.unack_cnt) += ls->sstat_unackdata;
+    *(pmnp->mst_cs.pending_cnt) += ls->sstat_penddata;
+
+    return 0;
+}
 
 int
 mst_link_status(mst_nw_peer_t *pmnp)
@@ -348,6 +407,11 @@ mst_link_status(mst_nw_peer_t *pmnp)
 #endif
 
     mst_print_sctp_paddrinfo(&link_status.sstat_primary);
+
+
+    pmnp->mst_cs.curr_sample_cnt++;
+    mst_calculate_tput(pmnp);
+    mst_compute_congestion(pmnp, &link_status);
 
     pmnp->mst_nwp.link_nice = (link_status.sstat_primary.spinfo_srtt)?((float)1.0/link_status.sstat_primary.spinfo_srtt):1.0;
     pmnp->mst_nwp.link_nice += (link_status.sstat_unackdata)?((float)1/link_status.sstat_unackdata):1.0;

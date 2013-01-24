@@ -4,6 +4,7 @@
 #include "mst_timer.h"
 #include "mst_tun.h"
 #include "mst_nw_queue.h"
+#include "mst_cntrs.h"
 
 extern mst_nw_conn_table_t mst_nw_ct[D_NW_CONN_TABLE_SIZE];
 
@@ -14,11 +15,25 @@ mst_nw_peer_t *mnp_l; // For local socket inits
 extern pthread_mutex_t mst_eq_lock;
 extern pthread_cond_t mst_eq_cond;
 
+void mst_nw_write(struct mst_nw_peer *pmnp);
+void mst_tun_write(struct mst_nw_peer *pmnp);
+void mst_nw_read(struct mst_nw_peer *pmnp);
+void mst_tun_read(struct mst_nw_peer *pmnp);
+int mst_do_nw_write(struct mst_nw_peer *pmnp, mst_buffer_t *mbuf, int rlen);
+int mst_do_tun_write(struct mst_nw_peer *pmnp, mst_buffer_t *mbuf, int rlen);
+int mst_do_nw_read(struct mst_nw_peer *pmnp);
+int mst_do_tun_read(struct mst_nw_peer *pmnp);
+
 atomic_t tun_reads, tun_writes;
 atomic_t nw_reads, nw_writes;
 
 #define D_TUN_READ 0
 #define D_NW_READ 1
+
+inline time_t mst_jiffies(void)
+{
+    return time(NULL);
+}
 
 inline int mst_get_mnp_state(mst_nw_peer_t *pmnp) 
 {
@@ -28,6 +43,101 @@ inline int mst_get_mnp_state(mst_nw_peer_t *pmnp)
     pthread_mutex_unlock(&pmnp->ref_lock);
 
     return state;
+}
+
+int mst_init_mnp(mst_nw_peer_t *pmnp)
+{
+    char cntr_name[D_MST_CNTR_LEN + 1] = {0};
+    memset(&pmnp->mst_cs, 0, sizeof (pmnp->mst_cs));
+    pmnp->mst_cs.link_color = MST_LINK_YELLOW;
+    pmnp->mst_cs.sample_cnt = D_SAMPLE_CNT;
+    pmnp->mst_cs.curr_sample_cnt = D_SAMPLE_CNT;
+
+    if (D_MNP_TYPE_NW == M_MNP_TYPE(pmnp->mnp_flags)) {
+        pmnp->mst_epoll_write = mst_nw_write;
+        pmnp->mst_epoll_read = mst_nw_read;
+        pmnp->mst_data_write = mst_do_nw_write;
+        pmnp->mst_data_read = mst_do_nw_read;
+
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.pkts_in", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.pkts_in);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.pkts_out", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.pkts_out);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.bytes_in", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.bytes_in);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.bytes_out", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.bytes_out);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.unack_cnt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.unack_cnt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.pending_cnt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.pending_cnt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.srtt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.srtt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.min_srtt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.min_srtt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.max_srtt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.max_srtt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.avg_srtt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.avg_srtt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.min_rx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.min_rx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.max_rx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.max_rx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.rx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.rx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.min_tx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.min_tx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.max_tx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.max_tx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.tx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.tx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "nw.%d.snd_cnt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.snd_cnt);
+    }
+    else {
+        pmnp->mst_epoll_write = mst_tun_write;
+        pmnp->mst_epoll_read = mst_tun_read;
+        pmnp->mst_data_write = mst_do_tun_write;
+        pmnp->mst_data_read = mst_do_tun_read;
+
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.pkts_in", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.pkts_in);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.pkts_out", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.pkts_out);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.bytes_in", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.bytes_in);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.bytes_out", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.bytes_out);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.unack_cnt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.unack_cnt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.pending_cnt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.pending_cnt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.srtt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.srtt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.min_srtt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.min_srtt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.max_srtt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.max_srtt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.avg_srtt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.avg_srtt);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.min_rx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.min_rx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.max_rx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.max_rx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.rx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.rx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.min_tx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.min_tx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.max_tx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.max_tx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.tx_bw", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.tx_bw);
+        snprintf(cntr_name, D_MST_CNTR_LEN, "tun.%d.snd_cnt", pmnp->mst_fd);
+        mst_register_cntr(cntr_name, &pmnp->mst_cs.snd_cnt);
+    }
+    *(pmnp->mst_cs.snd_cnt) = D_MAX_SND_CNT;
+
+    return 0;
 }
 
 inline void mst_epoll_events(mst_nw_peer_t *pmnp, int ev_cmd, int events)
@@ -103,7 +213,8 @@ void mst_tun_write(mst_nw_peer_t *pmnp)
     //fprintf(stderr, "%s(): __ENTRY__\n", __func__);
     
     while (NULL != (qelm = mst_mbuf_dequeue_tail(pmnp))) {
-        mst_do_tun_write(pmnp, qelm->mbuf, qelm->wlen);
+        //mst_do_tun_write(pmnp, qelm->mbuf, qelm->wlen);
+        pmnp->mst_data_write(pmnp, qelm->mbuf, qelm->wlen);
         mst_dealloc_mbuf(qelm->mbuf);
         mst_free(qelm, __func__);
         count++;
@@ -158,6 +269,10 @@ int mst_do_tun_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
     }
     else {
         atomic_inc(&tun_writes);
+        
+        pmnp->mst_cs.tx_time = mst_jiffies();
+        *(pmnp->mst_cs.pkts_out)++;
+        *(pmnp->mst_cs.bytes_out) += rv;
         //fprintf(stderr, "Wrote %d bytes on tun dev\n", rv);
     }
     //fprintf(stderr, "%s:%d unlock\n", __FILE__, __LINE__);
@@ -177,7 +292,8 @@ int mst_send_nw_init(mst_nw_peer_t *pmnp)
     iov = mst_mbuf_to_iov(mbuf, &iov_len, D_NW_READ);
     assert(iov);
 
-    mst_do_nw_write(pmnp, mbuf, 0);
+    //mst_do_nw_write(pmnp, mbuf, 0);
+    pmnp->mst_data_write(pmnp, mbuf, 0);
     fprintf(stderr, "%s(): Sent init message\n", __func__);
 
     if (!mst_lookup_nw_id(ntohl(pmnp->nw_id))) {
@@ -256,6 +372,10 @@ tun_read_again:
     if (rlen > 0) {
         unsigned sip = 0, dip = 0;
         int sid = -1;
+
+        pmnp->mst_cs.rx_time = mst_jiffies();
+        (*pmnp->mst_cs.pkts_in)++;
+        *(pmnp->mst_cs.bytes_in) += rlen;
 
         if (!mst_get_ip_info(iov[1].iov_base, iov[1].iov_len, &sip, &dip)) {
 
@@ -343,6 +463,10 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
         //fprintf(stderr, "Sendmsg --> EAGAIN\n");
     }
     atomic_inc(&nw_writes);
+    
+    pmnp->mst_cs.tx_time = mst_jiffies();
+    *(pmnp->mst_cs.pkts_out)++;
+    *(pmnp->mst_cs.bytes_out) += rv;
 
     //fprintf(stderr, "%s:%d unlock\n", __FILE__, __LINE__);
 
@@ -359,7 +483,8 @@ void mst_nw_write(mst_nw_peer_t *pmnp)
 
     
     while (NULL != (qelm = mst_mbuf_dequeue_tail(pmnp))) {
-        if (EAGAIN == mst_do_nw_write(pmnp, qelm->mbuf, qelm->wlen)) {
+        //if (EAGAIN == mst_do_nw_write(pmnp, qelm->mbuf, qelm->wlen)) {
+        if (EAGAIN == pmnp->mst_data_write(pmnp, qelm->mbuf, qelm->wlen)) {
             mst_insert_mbuf_q(pmnp, qelm->mbuf, qelm->wlen);
             pthread_mutex_lock(&pmnp->ref_lock);
             mst_epoll_events (pmnp, EPOLL_CTL_MOD, (pmnp->mst_ef | (EPOLLOUT)));
@@ -496,6 +621,10 @@ read_again:
         return -1;
     }
     if (rlen > 0) {
+        pmnp->mst_cs.rx_time = mst_jiffies();
+        (*pmnp->mst_cs.pkts_in)++;
+        *(pmnp->mst_cs.bytes_in) += rlen;
+        
         //fprintf(stderr, "Received %d bytes. Decode SCTP here.\n", rlen);
         rv = mst_process_message(pmnp, &rmsg, rlen);
         atomic_inc(&nw_reads);
@@ -551,7 +680,9 @@ int mst_setup_tunnel(mst_nw_peer_t *pmnp)
     mnp[tunfd].mst_td = NULL;
     mnp[tunfd].mnp_pair = (int)pmnp;
     mnp[tunfd].nw_id = pmnp->nw_id;
+    
     M_MNP_REF_UP(&mnp[tunfd]);
+    mst_init_mnp(&mnp[tunfd]);
     
     mst_epoll_events (&mnp[tunfd], EPOLL_CTL_ADD, (EPOLLIN|EPOLLET));
     //mst_epoll_events (&mnp[tunfd], EPOLL_CTL_ADD, (EPOLLIN));
@@ -625,6 +756,8 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
         assert(rv >= 0);
 
         M_MNP_REF_UP(&mnp[cfd]);
+        mst_init_mnp(&mnp[cfd]);
+
         evutil_make_socket_nonblocking(cfd);
         evtimer_add(mnp[cfd].mst_td->te, &mnp[cfd].mst_td->timeo);
         
@@ -699,13 +832,12 @@ int mst_setup_network(void)
         assert(!mst_bind_socket(&mnp_l[index], mst_global_opts.mst_config.mst_mode));
 
         if (mst_global_opts.mst_config.mst_mode) {
-            mnp_l[index].mnp_flags = M_MNP_SET_TYPE(mnp_l[index].mnp_flags, D_MNP_TYPE_NW);
             mnp_l[index].mnp_flags = M_MNP_SET_STATE(mnp_l[index].mnp_flags, D_MNP_STATE_LISTEN);
         }
-        else {
-            mnp_l[index].mnp_flags = M_MNP_SET_TYPE(mnp_l[index].mnp_flags, D_MNP_TYPE_NW);
-        }
 
+        mnp_l[index].mnp_flags = M_MNP_SET_TYPE(mnp_l[index].mnp_flags, D_MNP_TYPE_NW);
+
+        mst_init_mnp(&mnp_l[index]);
         //fprintf(stderr, "MNP flags: %0X, %p\n", mnp_l[index].mnp_flags, &mnp_l[index]);
 
         mst_epoll_events (&mnp_l[index], EPOLL_CTL_ADD, (EPOLLIN|EPOLLET));
@@ -742,7 +874,8 @@ mst_do_connect(mst_nw_peer_t *pmnp)
     pmnp->mst_td->timeo.tv_sec = 0;
     pmnp->mst_td->timeo.tv_usec = 50000;
 
-    mst_nw_read(pmnp);
+    //mst_nw_read(pmnp);
+    pmnp->mst_epoll_read(pmnp);
     
     return 0;
 }
@@ -879,10 +1012,12 @@ void *mst_nw_thread(void *arg)
                     break;
                 case D_MNP_STATE_CONNECTED:
                 case D_MNP_STATE_ESTABLISHED:
-                    mst_nw_read(pmnp);
+                    //mst_nw_read(pmnp);
+                    pmnp->mst_epoll_read(pmnp);
                     break;
                 case D_MNP_STATE_TUNNEL:
-                    mst_tun_read(pmnp);
+                    //mst_tun_read(pmnp);
+                    pmnp->mst_epoll_read(pmnp);
                     break;
                 default:
                     fprintf(stderr, "Unknown MNP_TYPE %0X received\n", pmnp->mnp_flags);

@@ -245,7 +245,8 @@ void *mst_loop_tun_queue(void *arg)
         }
         pthread_mutex_unlock(&tun_rq_lock);
 
-        mst_do_tun_read(qelm->pmnp);
+        //mst_do_tun_read(qelm->pmnp);
+        qelm->pmnp->mst_data_read(qelm->pmnp);
         M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
         
         if (-1 == mst_insert_epoll_queue(qelm)) {
@@ -275,7 +276,8 @@ void *mst_loop_tun_wq(void *arg)
         }
         pthread_mutex_unlock(&tun_wq_lock);
 
-        mst_tun_write(qelm->pmnp);
+        //mst_tun_write(qelm->pmnp);
+        qelm->pmnp->mst_epoll_write(qelm->pmnp);
         //M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
         
         mst_free(qelm, __func__);
@@ -302,7 +304,8 @@ void *mst_loop_nw_queue(void *arg)
         }
         pthread_mutex_unlock(&nw_rq_lock);
 
-        mst_do_nw_read(qelm->pmnp);
+        //mst_do_nw_read(qelm->pmnp);
+        qelm->pmnp->mst_data_read(qelm->pmnp);
         M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
 
         if (-1 == mst_insert_epoll_queue(qelm)) {
@@ -331,7 +334,8 @@ void *mst_loop_nw_wq(void *arg)
         }
         pthread_mutex_unlock(&nw_wq_lock);
 
-        mst_nw_write(qelm->pmnp);
+        //mst_nw_write(qelm->pmnp);
+        qelm->pmnp->mst_epoll_write(qelm->pmnp);
         //M_MNP_REF_DOWN_AND_FREE(qelm->pmnp);
         mst_free(qelm, __func__);
     }

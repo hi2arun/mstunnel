@@ -21,9 +21,13 @@
 #define D_NW_VERSION_1_0 0x00010000
 
 typedef struct mst_nw_header {
-    int nw_id;
     int nw_version;
+    int nw_id;
 } __attribute__((__packed__)) mst_nw_header_t;
+
+#define D_MIN_SND_CNT 4 
+#define D_MAX_SND_CNT 100
+#define D_SAMPLE_CNT 10 
 
 typedef struct mst_mnp {
     int slot_available;
@@ -38,6 +42,7 @@ typedef struct mst_nw_conn {
     mst_mnp_t mnp_slots[D_NW_TOT_LINKS];
     int curr_slot;
     int mnp_pair;
+    int link_type; // 0 - similar, 1 - dissimilar
     pthread_mutex_t n_lock; // node lock
 //    TAILQ_HEAD(mst_mnp_q, mst_mnp) mnp_list;
 } mst_nw_conn_t;
@@ -98,5 +103,7 @@ extern int mst_insert_ip_tuple(unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, 
 extern int mst_lookup_ip_tuple(unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int sid);
 extern int mst_get_ip_info(char *data, int rlen, unsigned *sip, unsigned *dip);
 extern void mst_dump_ip_flow_table(void);
+
+extern int mst_calculate_tput(mst_nw_peer_t *pmnp);
 
 #endif //!__MST_NETWORK_H__

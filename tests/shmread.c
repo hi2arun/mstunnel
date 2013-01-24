@@ -40,7 +40,9 @@ int main(int argc, char **argv)
         count = 0;
         while(count < cntr_hdr->hdr_cnt) {
             cntr_body = (mst_shm_body_t *)((char *)cntr_hdr + sizeof(mst_shm_hdr_t) + (count * sizeof(mst_shm_body_t)));
-            fprintf(stderr, "%s \t: %20u\n", cntr_body->cntr_name, cntr_body->value);
+            if (cntr_body->value) {
+                fprintf(stderr, "%s \t: %20u\n", cntr_body->cntr_name, cntr_body->value);
+            }
             count++;
         }
 
