@@ -136,6 +136,8 @@ int mst_init_mnp(mst_nw_peer_t *pmnp)
         mst_register_cntr(cntr_name, &pmnp->mst_cs.snd_cnt);
     }
     *(pmnp->mst_cs.snd_cnt) = D_MAX_SND_CNT;
+    pmnp->mst_cs.min_snd_cnt = D_MIN_SND_CNT;
+    pmnp->mst_cs.max_snd_cnt = D_MAX_SND_CNT;
 
     return 0;
 }
@@ -339,6 +341,7 @@ int mst_do_tun_read(mst_nw_peer_t *pmnp)
     int rlen = 0;
     int iov_len = 0;
     mst_nw_peer_t *spmnp;
+    int snd_cnt = 0;
 
 tun_read_again:
     //fprintf(stderr, "%s(): __ENTRY__\n", __func__);
@@ -387,12 +390,16 @@ tun_read_again:
             }
             pmnp->mst_cbuf->sid = sid;
 
-            spmnp = mst_get_next_fd(ntohl(pmnp->nw_id));
+            if (!snd_cnt) {
+                spmnp = mst_get_next_fd(ntohl(pmnp->nw_id));
+                snd_cnt = spmnp->mst_cs.snd_cnt;
+            }
             //fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
             
             if (!spmnp || (-1 == mst_insert_mbuf_q(spmnp, pmnp->mst_cbuf, rlen))) {
                 mst_dealloc_mbuf(mbuf);
             }
+            snd_cnt--;
             atomic_inc(&tun_reads);
         }
     }

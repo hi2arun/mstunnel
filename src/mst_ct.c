@@ -120,6 +120,7 @@ int mst_remove_mnp_by_nw_id (int nw_id, int mnp_id)
             if (nw_conn->mnp_slots[index].mnp_id == mnp_id) {
                 nw_conn->mnp_slots[index].mnp_id = 0;
                 nw_conn->mnp_slots[index].slot_available = 1;
+                nw_conn->mnp_slots[index].snd_cnt = 0;
                 rv = 1;
                 atomic_dec(&nw_conn->ref_cnt);
                 fprintf(stderr, "mnp 0x%X removed from bucket %d for nw_id 0x%X\n", mnp_id, bucket_id, nw_id);
@@ -164,8 +165,10 @@ int mst_insert_mnp_by_nw_id (int nw_id, int mnp_id)
         INIT_HLIST_NODE(&nw_conn->hnode);
         nw_conn->mnp_slots[0].mnp_id = mnp_id;
         nw_conn->mnp_slots[0].slot_available = 0;
+        nw_conn->mnp_slots[0].snd_cnt = 0;
         for(index = 1; index < D_NW_TOT_LINKS; index++) {
             nw_conn->mnp_slots[index].slot_available = 1;
+            nw_conn->mnp_slots[index].snd_cnt = 0;
         }
         nw_conn->mnp_pair = ((mst_nw_peer_t *)mnp_id)->mnp_pair;
         atomic_inc(&nw_conn->ref_cnt);
@@ -183,6 +186,7 @@ int mst_insert_mnp_by_nw_id (int nw_id, int mnp_id)
                 if (nw_conn->mnp_slots[index].slot_available) {
                     nw_conn->mnp_slots[index].mnp_id = mnp_id;
                     nw_conn->mnp_slots[index].slot_available = 0;
+                    nw_conn->mnp_slots[index].snd_cnt = 0;
                     rv = 0;
                     atomic_inc(&nw_conn->ref_cnt);
                     ((mst_nw_peer_t *)mnp_id)->mnp_pair = nw_conn->mnp_pair;

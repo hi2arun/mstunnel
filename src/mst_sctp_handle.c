@@ -343,12 +343,105 @@ mst_calculate_tput(mst_nw_peer_t *pmnp)
     return;
 }
 
+typedef struct mst_pkts_watermark {
+    int min;
+    int max;
+} mst_pkts_wm_t;
+
+#define D_LINK_COLOR_CNT 3 // Red, Yellow, Green
+
+// Link congestion matrix
+typedef struct mst_link_cmtx {
+    int srtt;
+    mst_pkts_wm_t link_wm[D_LINK_COLOR_CNT];
+} mst_link_cmtx_t;
+
+mst_link_cmtx_t link_mtx[] = {
+    //srtt, Green, Yellow, Red
+    {100, {0, 15, 16, 30, 31, -1}},
+    {300, {0, 30, 31, 50, 51, -1}},
+    {700, {0, 70, 71, 100, 101, -1}},
+    {1000, {0, 100, 101, 150, 151, -1}},
+    {-1},
+};
+
+int
+mst_color_link(int srtt, int unack_cnt)
+{
+    int index = 0;
+    int y = 0;
+
+    for(index = 0; link_mtx[index].srtt != -1; index++) {
+        if (srtt <= link_mtx[index].srtt) {
+            for (y = 0; y < D_LINK_COLOR_CNT; y++) {
+                if ((unack_cnt >= link_mtx[index].link_wm[y].min) && (unack_cnt <= link_mtx[index].link_wm[y].max)) {
+                    switch(y) {
+                        case 0:
+                            return MST_LINK_GREEN;
+                        case 1:
+                            return MST_LINK_YELLOW;
+                        case 2:
+                        default:
+                            return MST_LINK_RED;
+                    }
+                }
+            }
+        }
+    }
+
+    // Larger RTT cases
+    fprintf(stderr, "Large RTT %d\n", srtt);
+
+    for (y = 0; y < D_LINK_COLOR_CNT; y++) {
+        if ((unack_cnt >= link_mtx[index - 1].link_wm[y].min) && (unack_cnt <= link_mtx[index - 1].link_wm[y].max)) {
+            switch(y) {
+                case 0:
+                    return MST_LINK_GREEN;
+                case 1:
+                    return MST_LINK_YELLOW;
+                case 2:
+                default:
+                    return MST_LINK_RED;
+            }
+        }
+    }
+
+    return MST_LINK_RED;
+}
+
+inline int
+max(int a, int b) {
+    return (a >= b)?a:b;
+}
+
+inline int
+min(int a, int b) {
+    return (a <= b)?a:b;
+}
+
 int 
 mst_compute_congestion(mst_nw_peer_t *pmnp, struct sctp_status *ls)
 {
     if (!(pmnp->mst_cs.curr_sample_cnt % pmnp->mst_cs.sample_cnt)) {
+        mst_link_color_t link_color = MST_LINK_YELLOW;
+
         pmnp->mst_cs.curr_sample_cnt = 0;
         *(pmnp->mst_cs.avg_srtt) /= pmnp->mst_cs.sample_cnt;
+
+        link_color = mst_color_link(*(pmnp->mst_cs.avg_srtt), *(pmnp->mst_cs.unack_cnt));
+        if (MST_LINK_GREEN == link_color) {
+            *(pmnp->mst_cs.snd_cnt) = max((*(pmnp->mst_cs.snd_cnt))/2, pmnp->mst_cs.min_snd_cnt);
+        }
+        else if ((MST_LINK_YELLOW == link_color) && (MST_LINK_RED != pmnp->mst_cs.link_color)) {
+            *(pmnp->mst_cs.snd_cnt) = min((*(pmnp->mst_cs.snd_cnt))*2, pmnp->mst_cs.max_snd_cnt);
+        }
+        else if (MST_LINK_YELLOW == link_color) {
+            *(pmnp->mst_cs.snd_cnt) = pmnp->mst_cs.max_snd_cnt;
+        }
+        else {
+            *(pmnp->mst_cs.snd_cnt) = 1;;
+        }
+        pmnp->mst_cs.link_color = link_color;
 
         *(pmnp->mst_cs.unack_cnt) = 0;
         *(pmnp->mst_cs.pending_cnt) = 0;
@@ -365,6 +458,7 @@ mst_compute_congestion(mst_nw_peer_t *pmnp, struct sctp_status *ls)
     if (ls->sstat_primary.spinfo_srtt > *(pmnp->mst_cs.max_srtt)) {
         *(pmnp->mst_cs.max_srtt) = ls->sstat_primary.spinfo_srtt;
     }
+
     *(pmnp->mst_cs.srtt) = ls->sstat_primary.spinfo_srtt;
     *(pmnp->mst_cs.unack_cnt) += ls->sstat_unackdata;
     *(pmnp->mst_cs.pending_cnt) += ls->sstat_penddata;
@@ -413,23 +507,6 @@ mst_link_status(mst_nw_peer_t *pmnp)
     mst_calculate_tput(pmnp);
     mst_compute_congestion(pmnp, &link_status);
 
-    pmnp->mst_nwp.link_nice = (link_status.sstat_primary.spinfo_srtt)?((float)1.0/link_status.sstat_primary.spinfo_srtt):1.0;
-    pmnp->mst_nwp.link_nice += (link_status.sstat_unackdata)?((float)1/link_status.sstat_unackdata):1.0;
-    pmnp->mst_nwp.link_nice += (link_status.sstat_penddata)?((float)1/link_status.sstat_penddata):1.0;
-
-    if (0 == atomic_read(&pmnp->mst_nwp.xmit_curr_pkts)) 
-    {
-        atomic_set(&pmnp->mst_nwp.xmit_max_pkts, (int)(pmnp->mst_nwp.link_nice * pmnp->mst_nwp.xmit_factor));
-        atomic_set(&pmnp->mst_nwp.xmit_curr_pkts, atomic_read(&pmnp->mst_nwp.xmit_max_pkts));
-    }
-
-    pmnp->mst_nwp.xmit_curr_stream = (pmnp->mst_nwp.xmit_curr_stream + 1) % pmnp->num_ostreams;
-    //mst_tuple->nw_parms.xmit_curr_stream = 0;
-
-    //fprintf(stderr, "Unackdata: %f, ", (link_status.sstat_unackdata)?1/(link_status.sstat_unackdata):0.0);
-    //fprintf(stderr, "Pend data: %f, ", (link_status.sstat_penddata)?1/(link_status.sstat_penddata):0.0);
-    //fprintf(stderr, "[%p] Link nice: %f, xmit_max_pkts: %d\n", pmnp, pmnp->mst_nwp.link_nice, atomic_read(&pmnp->mst_nwp.xmit_max_pkts));
-    
     M_MNP_REF_DOWN_AND_FREE(pmnp);
 
     return 0;
@@ -452,13 +529,13 @@ mst_nw_peer_t *mst_get_next_fd(int nw_id)
     curr_slot = nw_conn->curr_slot;
     curr_pmnp = (mst_nw_peer_t *)(nw_conn->mnp_slots[curr_slot].mnp_id);
 
+    curr_slot = (curr_slot + 1)%D_NW_TOT_LINKS;
+    
     for (index = 0; index < D_NW_TOT_LINKS; index++) {
         if (!nw_conn->mnp_slots[curr_slot].slot_available) {
             pmnp = (mst_nw_peer_t *)(nw_conn->mnp_slots[curr_slot].mnp_id);
-            curr_pkts = atomic_read(&pmnp->mst_nwp.xmit_curr_pkts);
             avbl_link++;
-            if (curr_pkts) {
-                atomic_dec(&pmnp->mst_nwp.xmit_curr_pkts);
+            if (MST_LINK_RED != pmnp->mst_cs.link_color) {
                 nw_conn->curr_slot = curr_slot;
                 pthread_mutex_unlock(&nw_conn->n_lock); // lock was acquired by mst_mnp_by_nw_id()
                 return pmnp;
@@ -470,11 +547,8 @@ mst_nw_peer_t *mst_get_next_fd(int nw_id)
     }
         
     pthread_mutex_unlock(&nw_conn->n_lock); // lock was acquired by mst_mnp_by_nw_id()
-    if (avbl_link > 1) {
-        fprintf(stderr, "[WARNING] exit No NW-CONN available for nw id 0x%X\n", nw_id);
-    }
-    else {
-        return curr_pmnp;
-    }
-    return NULL;
+
+    fprintf(stderr, "Returning curr pmnp\n");
+    
+    return curr_pmnp;
 }

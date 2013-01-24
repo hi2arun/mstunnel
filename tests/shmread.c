@@ -41,13 +41,13 @@ int main(int argc, char **argv)
         while(count < cntr_hdr->hdr_cnt) {
             cntr_body = (mst_shm_body_t *)((char *)cntr_hdr + sizeof(mst_shm_hdr_t) + (count * sizeof(mst_shm_body_t)));
             if (cntr_body->value) {
-                fprintf(stderr, "%s \t: %20u\n", cntr_body->cntr_name, cntr_body->value);
+                fprintf(stderr, "%s \t\t\t: %20u\n", cntr_body->cntr_name, cntr_body->value);
             }
             count++;
         }
 
         fprintf(stderr, "============\n");
-        sleep(2);
+        sleep(1);
     }
 
     munmap(shm_ptr, D_MST_SHM_SIZE);

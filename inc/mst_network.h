@@ -32,6 +32,7 @@ typedef struct mst_nw_header {
 typedef struct mst_mnp {
     int slot_available;
     int mnp_id;
+    int snd_cnt;
 //    TAILQ_ENTRY(mst_mnp) q_field;
 } mst_mnp_t;
 
