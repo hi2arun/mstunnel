@@ -432,7 +432,7 @@ mst_compute_congestion(mst_nw_peer_t *pmnp, struct sctp_status *ls)
         if (MST_LINK_GREEN == link_color) {
             *(pmnp->mst_cs.snd_cnt) = max((*(pmnp->mst_cs.snd_cnt))/2, pmnp->mst_cs.min_snd_cnt);
         }
-        else if ((MST_LINK_YELLOW == link_color) && (MST_LINK_RED != pmnp->mst_cs.link_color)) {
+        else if ((MST_LINK_YELLOW == link_color) && (MST_LINK_RED != *(pmnp->mst_cs.link_color))) {
             *(pmnp->mst_cs.snd_cnt) = min((*(pmnp->mst_cs.snd_cnt))*2, pmnp->mst_cs.max_snd_cnt);
         }
         else if (MST_LINK_YELLOW == link_color) {
@@ -441,7 +441,7 @@ mst_compute_congestion(mst_nw_peer_t *pmnp, struct sctp_status *ls)
         else {
             *(pmnp->mst_cs.snd_cnt) = 1;;
         }
-        pmnp->mst_cs.link_color = link_color;
+        *(pmnp->mst_cs.link_color) = link_color;
 
         *(pmnp->mst_cs.unack_cnt) = 0;
         *(pmnp->mst_cs.pending_cnt) = 0;
@@ -460,8 +460,8 @@ mst_compute_congestion(mst_nw_peer_t *pmnp, struct sctp_status *ls)
     }
 
     *(pmnp->mst_cs.srtt) = ls->sstat_primary.spinfo_srtt;
-    *(pmnp->mst_cs.unack_cnt) += ls->sstat_unackdata;
-    *(pmnp->mst_cs.pending_cnt) += ls->sstat_penddata;
+    *(pmnp->mst_cs.unack_cnt) = ls->sstat_unackdata;
+    *(pmnp->mst_cs.pending_cnt) = ls->sstat_penddata;
 
     return 0;
 }
@@ -470,7 +470,7 @@ int
 mst_link_status(mst_nw_peer_t *pmnp)
 {
     struct sctp_status link_status;
-    mst_csi_t *mst_tuple;
+    //mst_csi_t *mst_tuple;
     socklen_t optlen = sizeof(struct sctp_status);
 
     if (D_MNP_STATE_ESTABLISHED != M_MNP_STATE(pmnp->mnp_flags)) {
@@ -487,7 +487,6 @@ mst_link_status(mst_nw_peer_t *pmnp)
         return -1;
     }
 
-    mst_tuple = pmnp->mst_mt;
 #if 0
     fprintf(stderr, "Link status for fd: %d, ", pmnp->mst_fd);
     fprintf(stderr, "Assoc ID: %d, ", link_status.sstat_assoc_id);
@@ -535,7 +534,7 @@ mst_nw_peer_t *mst_get_next_fd(int nw_id)
         if (!nw_conn->mnp_slots[curr_slot].slot_available) {
             pmnp = (mst_nw_peer_t *)(nw_conn->mnp_slots[curr_slot].mnp_id);
             avbl_link++;
-            if (MST_LINK_RED != pmnp->mst_cs.link_color) {
+            if (MST_LINK_RED != *(pmnp->mst_cs.link_color)) {
                 nw_conn->curr_slot = curr_slot;
                 pthread_mutex_unlock(&nw_conn->n_lock); // lock was acquired by mst_mnp_by_nw_id()
                 return pmnp;

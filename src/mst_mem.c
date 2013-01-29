@@ -23,6 +23,7 @@ atomic_t *malloc_cnt;
 atomic_t *free_cnt;
 atomic_t *os_malloc_cnt;
 atomic_t *os_free_cnt;
+extern mst_conf_t g_mst_conf;
 
 mst_mpool_bucket_t gmpool_slabs[mpool_slab_max];
 mst_mpool_bucket_t gmpool_table[D_MPOOL_TABLE_SIZE];
@@ -375,19 +376,22 @@ recheck:
         return p;
     }
 
+    pthread_mutex_lock(&gmpool_slabs[slab].b_lock);
     if (atomic_read(&gmpool_slabs[slab].count)) {
         if (size > gmpool_size_map[slab].size) {
             void *p = NULL;
             // We have done a full cycle of unavailable slots. Ask OS.
             p = os_malloc (size);
             fprintf(stderr, "[unavlbl] Got buffer %p of size %d bytes from OS\n", p, size);
+            pthread_mutex_unlock(&gmpool_slabs[slab].b_lock);
             return p;
         }
 
-        pthread_mutex_lock(&gmpool_slabs[slab].b_lock);
         rb_node = rb_first(&gmpool_slabs[slab].rbr);
-        rb_erase(rb_node, &gmpool_slabs[slab].rbr);
-        atomic_dec(&gmpool_slabs[slab].count);
+        if (rb_node) {
+            rb_erase(rb_node, &gmpool_slabs[slab].rbr);
+            atomic_dec(&gmpool_slabs[slab].count);
+        }
         pthread_mutex_unlock(&gmpool_slabs[slab].b_lock);
         
         mp_node = rb_entry(rb_node, struct mst_mpool_buf, rbn);
@@ -400,6 +404,7 @@ recheck:
         return mp_node->buffer;
     }
     else {
+        pthread_mutex_unlock(&gmpool_slabs[slab].b_lock);
         slab = ((slab + 1) % mpool_slab_max);
         rechk_cnt++;
         goto recheck;
@@ -463,12 +468,14 @@ int mst_init_mpool(void)
     int index = 0;
     int index_y = 0;
     mst_mpool_buf_t *mp_node;
+    int mem_per_slab = ((g_mst_conf.mpool_size/mpool_slab_max) * 1024 * 1024);
 
     for(index = 0; index < mpool_slab_max; index++) {
         pthread_mutex_init(&gmpool_slabs[index].b_lock, NULL);
 
         //for(index_y = 0; index_y < D_MPOOL_NODES_PER_SLAB; index_y++) {
-        for(index_y = 0; index_y < (D_MEM_PER_SLAB/gmpool_size_map[index].size); index_y++) {
+        //for(index_y = 0; index_y < (D_MEM_PER_SLAB/gmpool_size_map[index].size); index_y++) {
+        for(index_y = 0; index_y < (mem_per_slab/gmpool_size_map[index].size); index_y++) {
             mp_node = (mst_mpool_buf_t *)os_malloc(sizeof(mst_mpool_buf_t));
             assert(mp_node);
             rb_init_node(&mp_node->rbn);

@@ -18,6 +18,8 @@ int main(int argc, char **argv)
     int count = 0;
     int size = D_MST_SHM_SIZE;
     int cntr_index = 0;
+    int mc = 0;
+    int fc = 0;
 
     shm_fd = shm_open(D_MST_SHM_ID, O_RDONLY, S_IRWXU|S_IRWXG|S_IRWXO);
 
@@ -41,10 +43,17 @@ int main(int argc, char **argv)
         while(count < cntr_hdr->hdr_cnt) {
             cntr_body = (mst_shm_body_t *)((char *)cntr_hdr + sizeof(mst_shm_hdr_t) + (count * sizeof(mst_shm_body_t)));
             if (cntr_body->value) {
+                if (!strcmp(cntr_body->cntr_name, "malloc_cnt")) {
+                    mc = cntr_body->value;
+                }
+                if (!strcmp(cntr_body->cntr_name, "free_cnt")) {
+                    fc = cntr_body->value;
+                }
                 fprintf(stderr, "%s \t\t\t: %20u\n", cntr_body->cntr_name, cntr_body->value);
             }
             count++;
         }
+        fprintf(stderr, "malloc free delta: %u\n", (mc - fc));
 
         fprintf(stderr, "============\n");
         sleep(1);

@@ -21,6 +21,11 @@ extern atomic_t nw_in, nw_out;
 extern atomic_t tun_reads, tun_writes;
 extern atomic_t nw_reads, nw_writes;
 
+extern mst_conf_t g_mst_conf;
+
+extern void mst_config_dump(mst_conf_t *pconfig);
+extern int mst_config_load(const char *conf_path);
+
 void mst_log_event_cb(int severity, const char *msg);
 
 void mst_log_event_cb(int severity, const char *msg)
@@ -186,15 +191,18 @@ void sig_handler(int signo)
     return;
 }
 
+#define D_CONF_PATH_LEN 511
+
 int main(int argc, char **argv)
 {
     int opt;
+    char conf_path[D_CONF_PATH_LEN + 1] = {0};
 
-    while((opt = getopt(argc, argv, "sh")) != EOF) {
+    while((opt = getopt(argc, argv, "f:h")) != EOF) {
         switch(opt) {
-            case 's':
-                fprintf(stderr, "Server mode\n");
-                mst_global_opts.mst_config.mst_mode = 1;
+            case 'f':
+                fprintf(stderr, "Conf path: %s\n", optarg);
+                strncpy(conf_path, optarg, D_CONF_PATH_LEN);
                 break;
             case 'h':
             default:
@@ -205,6 +213,15 @@ int main(int argc, char **argv)
 
     signal(SIGTERM, sig_handler);
     signal(SIGINT, sig_handler);
+
+    if (mst_config_load(conf_path) != 0) {
+        fprintf(stderr, "Exiting...\n");
+        exit(EXIT_FAILURE);
+    }
+
+    mst_config_dump(&g_mst_conf);
+    
+    //exit(EXIT_SUCCESS);
 
     mst_init_shm_cntrs();
 

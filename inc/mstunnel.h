@@ -59,6 +59,37 @@ typedef struct mst_configuration {
     int log_level;
 } mst_config_t;
 
+typedef struct mst_links {
+    char *leftip;
+    unsigned leftport;
+    char *rightip;
+    unsigned rightport;
+} mst_links_t;
+
+typedef struct mst_nw_ctrl {
+    int nw_id;
+    int link_up_cnt;
+    char **link_up;
+    int link_down_cnt;
+    char **link_down;
+} mst_nw_ctrl_t;
+
+typedef struct mst_conf {
+    int version:16;
+    int mst_type;
+
+    int mpool_size;
+    int mbuf_size;
+    int nw_streams;
+
+    char *policy;
+    int lbmode;
+    int links_cnt;
+    mst_links_t *links;
+    int nw_conf_cnt;
+    mst_nw_ctrl_t *nw_conf;
+} mst_conf_t;
+
 typedef struct mst_nw_parms {
     float link_nice; // ~ 1/(avg SRTT) of the link
     int xmit_factor; // default 10
@@ -145,7 +176,7 @@ typedef struct mst_stat {
     int min_snd_cnt;
     int max_snd_cnt;
 
-    mst_link_color_t link_color;
+    mst_link_color_t *link_color;
 } mst_stat_t;
     
 TAILQ_HEAD(mst_mbuf_q, mst_buf_q);
@@ -155,7 +186,6 @@ typedef struct mst_conn {
     struct event *read_event; // read
     struct event *write_event; // write
     struct sockaddr_in ip_tuple;
-    mst_csi_t *mst_tuple;
     struct mst_timer_data *timer_data; 
     mst_stat_t mst_conn_stat;
     mst_nw_parms_t nw_parms;
@@ -221,6 +251,7 @@ typedef struct mst_nw_peer {
     unsigned short num_ostreams; // number of out streams
     unsigned short max_instreams; // Max instreams that we support
     mst_config_t *mst_config;
+    mst_links_t *link;
     pthread_mutex_t ref_lock;
     atomic_t ref_cnt;
 

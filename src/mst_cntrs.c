@@ -32,7 +32,7 @@ int mst_register_cntr(char *name, int **cntr)
         cntr_hdr->shm_offset += sizeof(mst_shm_body_t);
         cntr_hdr->hdr_cnt += 1;
 
-        fprintf(stderr, "Successfully added '%s' to shm space\n", name);
+        //fprintf(stderr, "Successfully added '%s' to shm space\n", name);
 
         return 0;
     }

@@ -6,6 +6,7 @@ mst_mem_config_t mst_mbuf_free_slots[mst_buf_unk];
 
 atomic_t mbuf_malloc_cnt;
 atomic_t mbuf_free_cnt;
+extern mst_conf_t g_mst_conf;
 
 typedef struct mem_slot_details {
     char mem_slot_name[D_NAME_SIZ + 1];
@@ -326,6 +327,7 @@ mst_membuf_init()
 {
     int index = 0;
     int cntr = 0;
+    int mem_size_per_chain = ((g_mst_conf.mbuf_size/8)* 1024 * 1024);
 
     for (index = 0; index < mst_buf_unk; index++) {
         memcpy(mst_mbuf_free_slots[index].mem_blk_name, msd[index].mem_slot_name, D_NAME_SIZ);
@@ -334,8 +336,8 @@ mst_membuf_init()
         mst_mbuf_free_slots[index].size_per_block = msd[index].size_in_bytes;
         mst_mbuf_inuse_slots[index].size_per_block = msd[index].size_in_bytes;
         
-        mst_mbuf_free_slots[index].__mbuf_chain.mbuf_count = D_MEM_SIZE_PER_CHAIN/mst_mbuf_free_slots[index].size_per_block;
-        mst_mbuf_inuse_slots[index].__mbuf_chain.mbuf_count = D_MEM_SIZE_PER_CHAIN/mst_mbuf_inuse_slots[index].size_per_block;
+        mst_mbuf_free_slots[index].__mbuf_chain.mbuf_count = mem_size_per_chain/mst_mbuf_free_slots[index].size_per_block;
+        mst_mbuf_inuse_slots[index].__mbuf_chain.mbuf_count = mem_size_per_chain/mst_mbuf_inuse_slots[index].size_per_block;
         
         mst_mbuf_free_slots[index].__mbuf_chain.mbuf_available = mst_mbuf_free_slots[index].__mbuf_chain.mbuf_count;
         mst_mbuf_inuse_slots[index].__mbuf_chain.mbuf_available = 0;

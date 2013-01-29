@@ -8,16 +8,20 @@ mst_dev_mngr_t g_mdm;
 #define D_TUN_DEV "/dev/net/tun"
 
 extern mst_event_base_t meb;
+extern mst_conf_t g_mst_conf;
 
 int mst_tun_init(void)
 {
     // server
-    if(mst_global_opts.mst_config.mst_mode) {
+    //if(mst_global_opts.mst_config.mst_mode) {
+    if(g_mst_conf.mst_type) {
         g_mdm.dev_prefix = "msts";
     }
     else {
         g_mdm.dev_prefix = "mstc";
     }
+
+    fprintf(stderr, "Tun prefix is '%s', type: %d\n", g_mdm.dev_prefix, g_mst_conf.mst_type);
 
     pthread_mutex_init(&g_mdm.mdm_mutex, NULL);
 

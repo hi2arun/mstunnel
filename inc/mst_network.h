@@ -16,12 +16,12 @@
 
 #define D_NW_CONN_TABLE_SIZE 512
 #define D_NW_TOT_LINKS 2
-// MSB(16 bytes): Major version
-// LSB(16 bytes): Minor version
-#define D_NW_VERSION_1_0 0x00010000
+// MSB(16 bytes): version
+#define D_NW_VERSION_1_0 0x0001
 
 typedef struct mst_nw_header {
-    int nw_version;
+    int nw_version:16;
+    int nw_lb_id:16;
     int nw_id;
 } __attribute__((__packed__)) mst_nw_header_t;
 
