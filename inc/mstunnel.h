@@ -248,6 +248,7 @@ typedef struct mst_nw_peer {
     mst_conn_t *mst_connection;
     int mnp_pair; //holds a pointer to its pair FD. conn <-> tunn pair
     int nw_id;
+    int lbmode;
     unsigned short num_ostreams; // number of out streams
     unsigned short max_instreams; // Max instreams that we support
     mst_config_t *mst_config;

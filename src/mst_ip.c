@@ -96,6 +96,7 @@ int mst_insert_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsign
         ip_tuple->sip = sip;
         ip_tuple->dip = dip;
     }
+    //ip_tuple->mnp = mnp;
     ip_tuple->sid = sid;
     ip_tuple->hits = 1;
     

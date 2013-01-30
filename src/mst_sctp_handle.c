@@ -269,8 +269,10 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
         else {
             int retval = 0;
             int retval_1 = 0;
-            fprintf(stderr, "NW control message is received: NW ID: 0x%x\n", ntohl(nw_header->nw_id));
+            fprintf(stderr, "NW control message is received: NW ID: 0x%x, version: %hu, lbmode: %hu\n", 
+                ntohl(nw_header->nw_id), ntohs(nw_header->nw_version), ntohs(nw_header->nw_lbmode));
             pmnp->nw_id = nw_header->nw_id;
+            pmnp->lbmode = nw_header->nw_lbmode;
             if (!mst_lookup_nw_id(ntohl(nw_header->nw_id))) {
                 mst_setup_tunnel(pmnp);
             }
@@ -511,7 +513,7 @@ mst_link_status(mst_nw_peer_t *pmnp)
     return 0;
 }
 
-mst_nw_peer_t *mst_get_next_fd(int nw_id)
+mst_nw_peer_t *mst_get_nw_slot(int nw_id)
 {
     mst_nw_conn_t *nw_conn = mst_mnp_by_nw_id(nw_id);
     mst_nw_peer_t *pmnp;

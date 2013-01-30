@@ -21,7 +21,7 @@
 
 typedef struct mst_nw_header {
     int nw_version:16;
-    int nw_lb_id:16;
+    int nw_lbmode:16;
     int nw_id;
 } __attribute__((__packed__)) mst_nw_header_t;
 
@@ -39,6 +39,7 @@ typedef struct mst_mnp {
 typedef struct mst_nw_conn {
     struct hlist_node hnode;
     int nw_id;
+    int nw_lbmode;
     atomic_t ref_cnt;
     mst_mnp_t mnp_slots[D_NW_TOT_LINKS];
     int curr_slot;
@@ -68,6 +69,7 @@ typedef struct mst_ip_tuple {
     unsigned dip;
     unsigned sid; // SCTP flow ID
     unsigned hits;
+    int mnp; // for sticky flow LB
     // perhaps, will think of adding L4 info later
 } mst_ip_tuple_t;
 
@@ -96,7 +98,7 @@ extern int mst_lookup_nw_id (int nw_id);
 extern int mst_lookup_mnp_by_nw_id (int nw_id, int mnp_id);
 extern int mst_insert_mnp_by_nw_id (int nw_id, int mnp_id);
 extern int mst_remove_mnp_by_nw_id (int nw_id, int mnp_id);
-extern mst_nw_peer_t *mst_get_next_fd(int nw_id);
+extern mst_nw_peer_t *mst_get_nw_slot(int nw_id);
 
 
 extern int mst_init_ip_flow_table(void);

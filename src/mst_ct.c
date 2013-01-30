@@ -161,6 +161,7 @@ int mst_insert_mnp_by_nw_id (int nw_id, int mnp_id)
         nw_conn = mst_malloc(sizeof(mst_nw_conn_t), __func__);
         pthread_mutex_init(&nw_conn->n_lock, NULL);
         nw_conn->nw_id = nw_id;
+        nw_conn->nw_lbmode = ntohs(((mst_nw_peer_t *)mnp_id)->lbmode);
         memset(nw_conn->mnp_slots, 0, sizeof(nw_conn->mnp_slots));
         INIT_HLIST_NODE(&nw_conn->hnode);
         nw_conn->mnp_slots[0].mnp_id = mnp_id;

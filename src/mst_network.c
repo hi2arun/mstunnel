@@ -295,7 +295,10 @@ int mst_send_nw_init(mst_nw_peer_t *pmnp)
     iov = mst_mbuf_to_iov(mbuf, &iov_len, D_NW_READ);
     assert(iov);
 
-    //mst_do_nw_write(pmnp, mbuf, 0);
+    pmnp->nw_id = htonl(g_mst_conf.nw_conf[0].nw_id);
+    pmnp->lbmode = g_mst_conf.lbmode;
+
+    //mst_do_nw_write;
     pmnp->mst_data_write(pmnp, mbuf, 0);
     fprintf(stderr, "%s(): Sent init message\n", __func__);
 
@@ -392,8 +395,10 @@ tun_read_again:
             pmnp->mst_cbuf->sid = sid;
 
             if (!snd_cnt) {
-                spmnp = mst_get_next_fd(ntohl(pmnp->nw_id));
-                snd_cnt = spmnp->mst_cs.snd_cnt;
+                spmnp = mst_get_nw_slot(ntohl(pmnp->nw_id));
+                if (spmnp) {
+                    snd_cnt = spmnp->mst_cs.snd_cnt;
+                }
             }
             //fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
             
@@ -425,14 +430,18 @@ int mst_do_nw_write(mst_nw_peer_t *pmnp, mst_buffer_t *mbuf, int rlen)
     struct iovec *iov = NULL;
     int iov_len = 0;
     int sid = -1;
-    mst_nw_header_t nw_header = {.nw_id = D_TEST_NW_ID, .nw_version = htonl(D_NW_VERSION_1_0)};
+    mst_nw_header_t nw_header; // = {.nw_id = D_TEST_NW_ID, .nw_version = htonl(D_NW_VERSION_1_0)};
     
     memset(&omsg, 0, sizeof(omsg));
 
     iov = mst_mbuf_rework_iov(mbuf, rlen, &iov_len, D_NW_READ);
 
+    nw_header.nw_id = pmnp->nw_id;
+    nw_header.nw_version = htons(g_mst_conf.version);
+    nw_header.nw_lbmode = htons(pmnp->lbmode);
+
     if (!rlen) {
-        pmnp->nw_id = nw_header.nw_id;
+        //pmnp->nw_id = nw_header.nw_id;
         sid = mst_get_new_sid();
     }
     else {
