@@ -102,8 +102,10 @@ extern mst_nw_peer_t *mst_get_nw_slot(int nw_id);
 
 
 extern int mst_init_ip_flow_table(void);
-extern int mst_insert_ip_tuple(unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsigned sid);
-extern int mst_lookup_ip_tuple(unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int sid);
+extern int mst_insert_ip_tuple(unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsigned sid, int mnp_id);
+//extern int mst_lookup_ip_tuple(unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int sid);
+extern int mst_lookup_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int sid, int nw_id, int snd_cnt, 
+        int lbmode, mst_nw_peer_t **pmnp);
 extern int mst_get_ip_info(char *data, int rlen, unsigned *sip, unsigned *dip);
 extern void mst_dump_ip_flow_table(void);
 

@@ -5,6 +5,7 @@
 
 #define D_CTRL_MSG_LEN 256 // 256 bytes is good enuf to hold control message
 
+extern mst_conf_t g_mst_conf;
 int
 mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
@@ -189,8 +190,8 @@ mst_process_data(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 
     if (!mst_get_ip_info(iov[1].iov_base, iov[1].iov_len, &sip, &dip)) {
         sid = mst_get_sid(rmsg);
-        if (mst_lookup_ip_tuple(sip, dip, E_NW_IN, sid) < 0) {
-            mst_insert_ip_tuple(sip, dip, E_NW_IN, sid);
+        if (mst_lookup_ip_tuple(sip, dip, E_NW_IN, sid, 0, 0, 0, NULL) < 0) {
+            mst_insert_ip_tuple(sip, dip, E_NW_IN, sid, 0);
         }
         pmnp->mst_cbuf->sid = sid;
         
@@ -272,7 +273,7 @@ mst_process_message(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
             fprintf(stderr, "NW control message is received: NW ID: 0x%x, version: %hu, lbmode: %hu\n", 
                 ntohl(nw_header->nw_id), ntohs(nw_header->nw_version), ntohs(nw_header->nw_lbmode));
             pmnp->nw_id = nw_header->nw_id;
-            pmnp->lbmode = nw_header->nw_lbmode;
+            pmnp->lbmode = ntohs(nw_header->nw_lbmode);
             if (!mst_lookup_nw_id(ntohl(nw_header->nw_id))) {
                 mst_setup_tunnel(pmnp);
             }
@@ -521,7 +522,6 @@ mst_nw_peer_t *mst_get_nw_slot(int nw_id)
     int curr_slot = 0;
     int index = 0;
     int curr_pkts = 0;
-    int avbl_link = 0;
 
     if (!nw_conn) {
         fprintf(stderr, "[WARNING] No NW-CONN available for nw id 0x%X\n", nw_id);
@@ -530,12 +530,13 @@ mst_nw_peer_t *mst_get_nw_slot(int nw_id)
     curr_slot = nw_conn->curr_slot;
     curr_pmnp = (mst_nw_peer_t *)(nw_conn->mnp_slots[curr_slot].mnp_id);
 
-    curr_slot = (curr_slot + 1)%D_NW_TOT_LINKS;
+    if (3 != nw_conn->nw_lbmode) {
+        curr_slot = (curr_slot + 1)%D_NW_TOT_LINKS;
+    }
     
     for (index = 0; index < D_NW_TOT_LINKS; index++) {
         if (!nw_conn->mnp_slots[curr_slot].slot_available) {
             pmnp = (mst_nw_peer_t *)(nw_conn->mnp_slots[curr_slot].mnp_id);
-            avbl_link++;
             if (MST_LINK_RED != *(pmnp->mst_cs.link_color)) {
                 nw_conn->curr_slot = curr_slot;
                 pthread_mutex_unlock(&nw_conn->n_lock); // lock was acquired by mst_mnp_by_nw_id()

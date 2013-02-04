@@ -158,8 +158,8 @@ int mst_read_policy_details(config_t *pconfig)
         return -1;
     }
     count = config_setting_length(nw_conf_setting);
-    if (!count) {
-        fprintf(stderr, "Empty nw_conf section is not allowed\n");
+    if (!count || (count > 1)) {
+        fprintf(stderr, "Not more than one nw_conf section must be present\n");
         return -1;
     }
 

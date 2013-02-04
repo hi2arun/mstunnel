@@ -5,9 +5,12 @@
 #include "mst_tun.h"
 #include "mst_nw_queue.h"
 
+extern mst_conf_t g_mst_conf;
 mst_nw_ip_flow_t mst_ip_ct[D_IP_FLOW_TABLE_SIZE];
 
-int mst_lookup_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int sid)
+//int mst_lookup_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int sid)
+int mst_lookup_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int sid, int nw_id, 
+        int snd_cnt, int lbmode, mst_nw_peer_t **pmnp)
 {
     unsigned l_sip;
     unsigned l_dip;
@@ -16,7 +19,6 @@ int mst_lookup_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int si
     mst_nw_ip_flow_t *mst_nw_ip_bkt;
     mst_ip_tuple_t *ip_tuple;
     mst_ip_tuple_t *temp_tuple;
-
     
     if (E_NW_IN == ip_dir) {
         l_sip = dip;
@@ -71,11 +73,35 @@ int mst_lookup_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int si
         }
     }
 
+    if ((E_TUN_IN == ip_dir) && (l_sid > 0) && (/*sticky flow*/ 1 == lbmode)) {
+        *pmnp = (mst_nw_peer_t *)ip_tuple->mnp;
+
+        if (!(*pmnp)) {
+            *pmnp = mst_get_nw_slot(ntohl(nw_id));
+        }
+        else if ((-1 == (*pmnp)->mst_fd) || (MST_LINK_RED == *((*pmnp)->mst_cs.link_color))) {
+            *pmnp = mst_get_nw_slot(ntohl(nw_id));
+        }
+        ip_tuple->mnp = *pmnp;
+    }
+
     pthread_mutex_unlock(&mst_nw_ip_bkt->b_lock);
+
+    if ((E_TUN_IN == ip_dir) && ((/*R-R*/ 2 == lbmode) || (/*S-F*/4 == lbmode) || 
+                (l_sid < 0) || (/*H-A*/ 3 == lbmode))) {
+        *pmnp = mst_get_nw_slot(ntohl(nw_id));
+    }
+
+    if ((E_TUN_IN == ip_dir) && /*AFS*/ 0 == lbmode) {
+        if ((*pmnp && ((-1 == (*pmnp)->mst_fd) || (MST_LINK_RED == *((*pmnp)->mst_cs.link_color)))) || !snd_cnt) {
+            *pmnp = mst_get_nw_slot(ntohl(nw_id));
+        }
+    }
+
     return l_sid;
 }
 
-int mst_insert_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsigned sid)
+int mst_insert_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsigned sid, int mnp_id)
 {
     unsigned bucket_id = 0;
     mst_nw_ip_flow_t *mst_nw_ip_bkt;
@@ -96,7 +122,7 @@ int mst_insert_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsign
         ip_tuple->sip = sip;
         ip_tuple->dip = dip;
     }
-    //ip_tuple->mnp = mnp;
+    ip_tuple->mnp = mnp_id;
     ip_tuple->sid = sid;
     ip_tuple->hits = 1;
     

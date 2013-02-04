@@ -344,7 +344,7 @@ int mst_do_tun_read(mst_nw_peer_t *pmnp)
     mst_buffer_t *mbuf = NULL;
     int rlen = 0;
     int iov_len = 0;
-    mst_nw_peer_t *spmnp;
+    mst_nw_peer_t *spmnp = NULL;
     int snd_cnt = 0;
 
 tun_read_again:
@@ -386,19 +386,17 @@ tun_read_again:
 
         if (!mst_get_ip_info(iov[1].iov_base, iov[1].iov_len, &sip, &dip)) {
 
-            sid = mst_lookup_ip_tuple(sip, dip, E_TUN_IN, sid);
+            //sid = mst_lookup_ip_tuple(sip, dip, E_TUN_IN, sid);
+            sid = mst_lookup_ip_tuple(sip, dip, E_TUN_IN, sid, pmnp->nw_id, snd_cnt, pmnp->lbmode, &spmnp);
             if (sid < 0) {
                 sid = mst_get_new_sid();
                 fprintf(stderr, "New SID is %d\n",sid);
-                mst_insert_ip_tuple(sip, dip, E_TUN_IN, sid);
+                mst_insert_ip_tuple(sip, dip, E_TUN_IN, sid, spmnp);
             }
             pmnp->mst_cbuf->sid = sid;
 
-            if (!snd_cnt) {
-                spmnp = mst_get_nw_slot(ntohl(pmnp->nw_id));
-                if (spmnp) {
-                    snd_cnt = spmnp->mst_cs.snd_cnt;
-                }
+            if (!snd_cnt && spmnp) {
+                snd_cnt = spmnp->mst_cs.snd_cnt;
             }
             //fprintf(stderr, "Received %d bytes. Decode TUNN here\n", rlen);
             
@@ -407,6 +405,9 @@ tun_read_again:
             }
             snd_cnt--;
             atomic_inc(&tun_reads);
+        }
+        else {
+            mst_dealloc_mbuf(mbuf);
         }
     }
 
@@ -691,6 +692,7 @@ int mst_setup_tunnel(mst_nw_peer_t *pmnp)
     tmnp->mst_td = NULL;
     tmnp->mnp_pair = (int)pmnp;
     tmnp->nw_id = pmnp->nw_id;
+    tmnp->lbmode = pmnp->lbmode;
     
     M_MNP_REF_UP(tmnp);
     mst_init_mnp(tmnp);
