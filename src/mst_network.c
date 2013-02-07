@@ -155,8 +155,11 @@ inline void mst_epoll_events(mst_nw_peer_t *pmnp, int ev_cmd, int events)
     ev.data.ptr = pmnp;
     pthread_mutex_lock(&meb.ev_lock);
     rv = epoll_ctl(epfd, ev_cmd, pmnp->mst_fd, &ev);
+    if (rv) {
+        fprintf(stderr, "%s() ERROR: %s\n", strerror(errno));
+    }
     pthread_mutex_unlock(&meb.ev_lock);
-    assert(!rv);
+    //assert(!rv);
     pmnp->mst_ef = events;
     return;
 }
@@ -757,7 +760,9 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
 
         rv = setsockopt(mnp[cfd].mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&pmnp->pmst_ses, sizeof(pmnp->pmst_ses));
 
-        //fprintf(stderr, "SSO: RV: %d\n", rv);
+        if (rv < 0) {
+            fprintf(stderr, "SSO: RV: %d, error: %s\n", rv, strerror(errno));
+        }
 
         assert(rv >= 0);
 
@@ -802,8 +807,6 @@ int mst_setup_network(void)
     mt = mst_get_tuple_config();
 
     pthread_mutex_init(&meb.ev_lock, NULL);
-    //meb.epfd = epoll_create(1/* Any +ve number shud do here*/);
-    //meb.epfd = epoll_create(2 * D_MAX_PEER_CNT/* Any +ve number shud do here*/);
     meb.epfd = epoll_create(2 * g_mst_conf.links_cnt/* Any +ve number shud do here*/);
 
     assert(meb.epfd > 0);
@@ -820,15 +823,12 @@ int mst_setup_network(void)
         meb.ev_cnt = (g_mst_conf.links_cnt + 1);
     }
 
-    //mnp_l = (mst_nw_peer_t *)mst_malloc(sizeof(mst_nw_peer_t) * mst_global_opts.mst_tuple_cnt, __func__);
     mnp_l = (mst_nw_peer_t *)mst_malloc(sizeof(mst_nw_peer_t) * g_mst_conf.links_cnt, __func__);
     
     assert(mnp_l);
 
-    //memset(mnp_l, 0, sizeof(mst_nw_peer_t) * mst_global_opts.mst_tuple_cnt);
     memset(mnp_l, 0, sizeof(mst_nw_peer_t) * (g_mst_conf.links_cnt + 1));
 
-    //for(index = 0; index < mst_global_opts.mst_tuple_cnt; index++) {
     for(index = 0; index < g_mst_conf.links_cnt; index++) {
         mnp_l[index].mst_connection = (mst_conn_t *)mst_malloc(sizeof(mst_conn_t), __func__);
         assert(mnp_l[index].mst_connection);
@@ -843,14 +843,11 @@ int mst_setup_network(void)
         TAILQ_INIT(&mnp_l[index].mst_wq);
         pthread_mutex_init(&mnp_l[index].mst_wql, NULL);
 
-        //pthread_mutex_init(&mnp_l[index].mst_cl, NULL);
         pthread_mutex_init(&mnp_l[index].ref_lock, NULL);
         mnp_l[index].mst_config = &mst_global_opts.mst_config;
         
-        //assert(!mst_bind_socket(&mnp_l[index], mst_global_opts.mst_config.mst_mode));
         assert(!mst_bind_socket(&mnp_l[index]));
 
-        //if (mst_global_opts.mst_config.mst_mode) {
         if (g_mst_conf.mst_type) {
             mnp_l[index].mnp_flags = M_MNP_SET_STATE(mnp_l[index].mnp_flags, D_MNP_STATE_LISTEN);
         }
@@ -858,10 +855,8 @@ int mst_setup_network(void)
         mnp_l[index].mnp_flags = M_MNP_SET_TYPE(mnp_l[index].mnp_flags, D_MNP_TYPE_NW);
 
         mst_init_mnp(&mnp_l[index]);
-        //fprintf(stderr, "MNP flags: %0X, %p\n", mnp_l[index].mnp_flags, &mnp_l[index]);
 
         mst_epoll_events (&mnp_l[index], EPOLL_CTL_ADD, (EPOLLIN|EPOLLET));
-        //mst_epoll_events (&mnp_l[index], EPOLL_CTL_ADD, (EPOLLIN));
     }
 
     return 0;

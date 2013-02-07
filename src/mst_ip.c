@@ -33,7 +33,7 @@ int mst_lookup_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int si
     bucket_id %= D_IP_FLOW_TABLE_SIZE;
     mst_nw_ip_bkt = &mst_ip_ct[bucket_id];
     
-//    fprintf(stderr, "Lookup[%d] SIP: "D_IPV4_STR_FMT", DIP: "D_IPV4_STR_FMT"\n", ip_dir, M_NIPQUAD(&l_sip), M_NIPQUAD(&l_dip));
+    //fprintf(stderr, "Lookup[%d] SIP: "D_IPV4_STR_FMT", DIP: "D_IPV4_STR_FMT"\n", ip_dir, M_NIPQUAD(&l_sip), M_NIPQUAD(&l_dip));
 
     pthread_mutex_lock(&mst_nw_ip_bkt->b_lock);
     for(ip_tuple = mst_nw_ip_bkt->head; ip_tuple; ip_tuple = ip_tuple->next) {
@@ -48,8 +48,10 @@ int mst_lookup_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int si
 
             if (mst_nw_ip_bkt->head == ip_tuple) {
                 // No LRU shifts. Head got a hit again.
+                // fprintf(stderr, "No LRU shifts. Head got a hit again.\n");
             }
             else if (mst_nw_ip_bkt->tail == ip_tuple) {
+                // fprintf(stderr, "Move tail to head and make tail->prev new tail\n");
                 // Move tail to head and make tail->prev new tail
                 temp_tuple = mst_nw_ip_bkt->tail->prev; // note New tail
                 mst_nw_ip_bkt->tail->next = mst_nw_ip_bkt->head;
@@ -58,8 +60,10 @@ int mst_lookup_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, int si
 
                 mst_nw_ip_bkt->head = mst_nw_ip_bkt->tail;
                 mst_nw_ip_bkt->tail = temp_tuple;
+                mst_nw_ip_bkt->tail->next = NULL;
             }
             else {
+                // fprintf(stderr, "This node is smewhr b/w head and tail. De-link it and make it head \n");
                 // This node is smewhr b/w head and tail. De-link it and make it head
                 ip_tuple->prev->next = ip_tuple->next;
                 ip_tuple->next->prev = ip_tuple->prev;
@@ -156,6 +160,7 @@ int mst_insert_ip_tuple (unsigned sip, unsigned dip, mst_ip_dir_t ip_dir, unsign
         else {
             // This is the first node
             mst_nw_ip_bkt->head = ip_tuple;
+            mst_nw_ip_bkt->tail = ip_tuple;
         }
         mst_nw_ip_bkt->slots++;
     }

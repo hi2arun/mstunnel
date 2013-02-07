@@ -183,7 +183,9 @@ void mst_dealloc_mbuf(mst_buffer_t *mbuf)
     mbuf_temp = mbuf_free_slot->__mbuf_chain.mbuf_list;
     // Make mbuf at head and the existing chain follows it
     mbuf->__next = mbuf_temp;
-    mbuf_temp->__prev = mbuf;
+    if (mbuf_temp) {
+        mbuf_temp->__prev = mbuf;
+    }
     if (mbuf->frags_count) {
         // Make mfrags at the head of the list
         mbuf->mfrags_tail->__next = mbuf;
@@ -308,7 +310,9 @@ mst_buffer_t *mst_alloc_mbuf(size_t size, int block_type, int module)
         }
         __mbuf_head->mbuf_list = mbuf_temp->__next;
         mbuf_temp->__next = NULL;
-        __mbuf_head->mbuf_list->__prev = NULL;
+        if (__mbuf_head->mbuf_list) {
+            __mbuf_head->mbuf_list->__prev = NULL;
+        }
         __mbuf->__next = NULL;
         __mbuf->__prev = NULL;
         __mbuf_head->mbuf_available -= frags_count;
