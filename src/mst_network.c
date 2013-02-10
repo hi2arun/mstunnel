@@ -169,6 +169,7 @@ int mst_create_socket(void)
     int rv = -1;
     int fd = -1;
     mst_config_t *mc = NULL;
+    int flag = 1;
     fd = socket(AF_INET, SOCK_STREAM, IPPROTO_SCTP);
 
     if (fd < 0) {
@@ -176,6 +177,11 @@ int mst_create_socket(void)
     }
 
     assert(fd > 0);
+
+    rv = setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
+    if (rv < 0) {
+        fprintf(stderr, "SO_REUSEADDR subscribe failure: %s\n", strerror (errno));
+    }
 
     // This call won't return NULL
     mc = mst_get_mst_config();
@@ -758,7 +764,8 @@ int mst_do_accept(mst_nw_peer_t *pmnp)
         mnp[cfd].mst_td->te = evtimer_new(meb.Teb, mst_timer, mnp[cfd].mst_td);
         mnp[cfd].mst_td->data = &mnp[cfd];
 
-        rv = setsockopt(mnp[cfd].mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&pmnp->pmst_ses, sizeof(pmnp->pmst_ses));
+        //rv = setsockopt(mnp[cfd].mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&pmnp->pmst_ses, sizeof(pmnp->pmst_ses));
+        rv = setsockopt(mnp[cfd].mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&mst_global_opts.mst_ses, sizeof(mst_global_opts.mst_ses));
 
         if (rv < 0) {
             fprintf(stderr, "SSO: RV: %d, error: %s\n", rv, strerror(errno));
@@ -913,7 +920,8 @@ mst_connect_socket(mst_nw_peer_t *pmnp)
 
     pmnp->mst_config = mst_conf;
 
-    rv = setsockopt(pmnp->mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&pmnp->pmst_ses, sizeof(pmnp->pmst_ses));
+    //rv = setsockopt(pmnp->mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&pmnp->pmst_ses, sizeof(pmnp->pmst_ses));
+    rv = setsockopt(pmnp->mst_fd, SOL_SCTP, SCTP_EVENTS, (char *)&mst_global_opts.mst_ses, sizeof(mst_global_opts.mst_ses));
     assert(rv >= 0);
 
     rv = connect(pmnp->mst_fd, (struct sockaddr *)&skaddr, sizeof(skaddr));
@@ -934,6 +942,7 @@ void *mst_nw_thread(void *arg)
     int index = 0;
     int epoll_delay = 1;
     mst_nw_peer_t *pmnp = NULL;
+    int mnp_state = 0;
 
     while(1) {
 
@@ -1008,26 +1017,25 @@ void *mst_nw_thread(void *arg)
             }
 
             //fprintf(stderr, "EPOLL loop, pmnp: %p, flags: %0X\n", pmnp, pmnp->mnp_flags);
-            //switch(M_MNP_STATE(pmnp->mnp_flags)) {
-            switch(mst_get_mnp_state(pmnp)) {
-                case D_MNP_STATE_LISTEN:
-                    mst_do_accept(pmnp);
-                    break;
-                case D_MNP_STATE_CONNECTING:
-                    fprintf(stderr, "State is connecting\n");
-                    mst_do_connect(pmnp);
-                    break;
-                case D_MNP_STATE_CONNECTED:
-                case D_MNP_STATE_ESTABLISHED:
-                    //mst_nw_read(pmnp);
-                    pmnp->mst_epoll_read(pmnp);
-                    break;
-                case D_MNP_STATE_TUNNEL:
-                    //mst_tun_read(pmnp);
-                    pmnp->mst_epoll_read(pmnp);
-                    break;
-                default:
-                    fprintf(stderr, "Unknown MNP_TYPE %0X received\n", pmnp->mnp_flags);
+            mnp_state = mst_get_mnp_state(pmnp);
+
+            if (D_MNP_STATE_LISTEN & mnp_state) {
+                mst_do_accept(pmnp);
+            }
+            else if (D_MNP_STATE_CONNECTING & mnp_state) {
+                fprintf(stderr, "State is connecting\n");
+                mst_do_connect(pmnp);
+            }
+            else if ((D_MNP_STATE_ESTABLISHED & mnp_state) || (D_MNP_STATE_CONNECTED & mnp_state)) {
+                //mst_nw_read(pmnp);
+                pmnp->mst_epoll_read(pmnp);
+            }
+            else if (D_MNP_STATE_TUNNEL & mnp_state) {
+                //mst_tun_read(pmnp);
+                pmnp->mst_epoll_read(pmnp);
+            }
+            else {
+                fprintf(stderr, "Unknown MNP_TYPE %0X received\n", pmnp->mnp_flags);
             }
         }
     }

@@ -58,11 +58,11 @@ mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
             break;
         // Comm RESTART
         case 2:
-            //fprintf(stderr, "COMM_RESTART\n");
+            fprintf(stderr, "COMM_RESTART\n");
             break;
         // Shutdown COMPLETE
         case 3:
-            //fprintf(stderr, "SHUTDOWN_COMPLETE\n");
+            fprintf(stderr, "SHUTDOWN_COMPLETE\n");
             break;
         // Comm DOWN
         case 1:
@@ -78,7 +78,69 @@ mst_process_ac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 int
 mst_process_pac(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    //fprintf(stderr, "ENTRY: %s()\n", __func__);
+    struct iovec *msg_iov = NULL;
+    union sctp_notification *snp = NULL;
+    struct sctp_paddr_change *spc;
+    char ctrl_msg[D_CTRL_MSG_LEN];
+    int mc_len = 0;
+    int mc_tlen = 0;
+    int index = 0;
+    
+    fprintf(stderr, "ENTRY: %s()\n", __func__);
+    assert(rlen <= D_CTRL_MSG_LEN);
+   
+    memset(ctrl_msg, 0, sizeof(ctrl_msg));
+    fprintf(stderr, "Ctrl msg len: %d\n", sizeof(ctrl_msg));
+
+    for (index = 0; index < rmsg->msg_iovlen; index++) {
+        msg_iov = &(rmsg->msg_iov[index]);
+
+        if ((mc_tlen + msg_iov->iov_len) < rlen) {
+            mc_len = msg_iov->iov_len;
+        }
+        else {
+            mc_len = (rlen - mc_tlen);
+        }
+
+        memcpy((ctrl_msg + mc_tlen), msg_iov->iov_base, mc_len);
+        mc_tlen += mc_len;
+        
+        fprintf(stderr, "Copied: %d bytes\n", mc_len);
+
+        if (mc_tlen >= rlen) {
+            fprintf(stderr, "Total Copied: %d bytes\n", mc_tlen);
+            break;
+        }
+    }
+
+    snp = (union sctp_notification *)ctrl_msg;
+    spc = &snp->sn_paddr_change;
+
+    switch(spc->spc_state) {
+        case SCTP_ADDR_AVAILABLE:
+            fprintf(stderr, "SCTP_ADDR_AVAILABLE\n");
+            pmnp->mnp_flags = M_MNP_UNSET_STATE(pmnp->mnp_flags, D_MNP_STATE_UNRCH);
+            break;
+        case SCTP_ADDR_UNREACHABLE:
+                fprintf(stderr, "SCTP_ADDR_UNREACHABLE\n");
+                *(pmnp->mst_cs.snd_cnt) = 1;
+                *(pmnp->mst_cs.link_color) = MST_LINK_RED;
+                pmnp->mnp_flags = M_MNP_SET_STATE(pmnp->mnp_flags, D_MNP_STATE_UNRCH);
+                break;
+        case SCTP_ADDR_REMOVED:
+                fprintf(stderr, "SCTP_ADDR_REMOVED\n");
+                break;
+        case SCTP_ADDR_ADDED:
+                fprintf(stderr, "SCTP_ADDR_ADDED\n");
+                break;
+        case SCTP_ADDR_MADE_PRIM:
+                fprintf(stderr, "SCTP_ADDR_MADE_PRIM\n");
+                break;
+        default:
+                fprintf(stderr, "Unknown error\n");
+                break;
+    }
+
     return 0;
 }
 int
@@ -114,7 +176,7 @@ mst_process_ai(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 int
 mst_process_auth_ind(mst_nw_peer_t *pmnp, struct msghdr *rmsg, int rlen)
 {
-    //fprintf(stderr, "ENTRY: %s()\n", __func__);
+    fprintf(stderr, "ENTRY: %s()\n", __func__);
     return 0;
 }
 
@@ -476,7 +538,8 @@ mst_link_status(mst_nw_peer_t *pmnp)
     //mst_csi_t *mst_tuple;
     socklen_t optlen = sizeof(struct sctp_status);
 
-    if (D_MNP_STATE_ESTABLISHED != M_MNP_STATE(pmnp->mnp_flags)) {
+    //if (D_MNP_STATE_ESTABLISHED != M_MNP_STATE(pmnp->mnp_flags)) {
+    if (!(D_MNP_STATE_ESTABLISHED & M_MNP_STATE(pmnp->mnp_flags))) {
         fprintf(stderr, "pmnp[%p] state is not D_MNP_STATE_ESTABLISHED\n", pmnp);
         M_MNP_REF_DOWN_AND_FREE(pmnp);
         return -1;
@@ -504,6 +567,10 @@ mst_link_status(mst_nw_peer_t *pmnp)
 
     mst_print_sctp_paddrinfo(&link_status.sstat_primary);
 
+    if (D_MNP_STATE_UNRCH & M_MNP_STATE(pmnp->mnp_flags)) {
+        M_MNP_REF_DOWN_AND_FREE(pmnp);
+        return 0;
+    }
 
     pmnp->mst_cs.curr_sample_cnt++;
     mst_calculate_tput(pmnp);

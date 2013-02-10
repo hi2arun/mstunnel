@@ -238,9 +238,10 @@ typedef struct mst_event_base {
 #define D_MNP_STATE_ESTABLISHED 0x8
 #define D_MNP_STATE_TUNNEL 0x10
 #define D_MNP_STATE_ERROR 0x20
+#define D_MNP_STATE_UNRCH 0x40
 
 #define M_MNP_STATE(x) ((x) & 0x0000FFFF)
-#define M_MNP_SET_STATE(x, state) (((x) & 0xFFFF0000) | state)
+#define M_MNP_SET_STATE(x, state) (((x) & 0xFFFFFFFF) | state)
 #define M_MNP_UNSET_STATE(x, state) (((x) & 0xFFFFFFFF) & ~state)
 
 typedef struct mst_nw_peer {

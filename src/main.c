@@ -161,6 +161,11 @@ int mst_config_init(void)
     mst_global_opts.mst_ses.sctp_data_io_event = 1;
     mst_global_opts.mst_ses.sctp_association_event = 1;
     mst_global_opts.mst_ses.sctp_shutdown_event = 1;
+    mst_global_opts.mst_ses.sctp_send_failure_event = 1;
+    mst_global_opts.mst_ses.sctp_peer_error_event = 1;
+    mst_global_opts.mst_ses.sctp_partial_delivery_event = 1;
+    mst_global_opts.mst_ses.sctp_address_event = 1;
+    mst_global_opts.mst_ses.sctp_adaptation_layer_event = 1;
 
     mst_global_opts.mst_tuple_cnt = 2;
     mst_global_opts.mst_sk_backlog = D_SRV_BACKLOG; 
