@@ -1,64 +1,5 @@
---- /usr/src/kernels/linux-3.0.4/include/linux/udp.h	2011-08-30 02:26:30.000000000 +0530
-+++ linux-3.0.4/include/linux/udp.h	2013-02-17 11:01:02.238656034 +0530
-@@ -29,6 +29,16 @@
- /* UDP socket options */
- #define UDP_CORK	1	/* Never send partially complete segments */
- #define UDP_ENCAP	100	/* Set the socket to accept encapsulated packets */
-+// udp-epoll support - begin
-+struct udp_peer_info {
-+    __be32 sip;
-+    __be32 dip;
-+	__be16	sport;
-+	__be16	dport;
-+};
-+#define UDP_ADD_PEER_INFO	500	/* Add new UDP socket to UDP connected table */
-+#define UDP_DEL_PEER_INFO	501	/* Del UDP socket from UDP connected table */
-+// udp-epoll support - end
- 
- /* UDP encapsulation types */
- #define UDP_ENCAP_ESPINUDP_NON_IKE	1 /* draft-ietf-ipsec-nat-t-ike-00/01 */
---- /usr/src/kernels/linux-3.0.4/include/net/udp.h	2011-08-30 02:26:30.000000000 +0530
-+++ linux-3.0.4/include/net/udp.h	2013-02-17 23:56:34.297951516 +0530
-@@ -77,6 +77,25 @@
- 	unsigned int		mask;
- 	unsigned int		log;
- };
-+
-+// udp-epoll support - begin
-+
-+struct udp_conn_info {
-+    struct udp_peer_info upi;
-+    struct sock *sk;
-+    struct hlist_node hnode;
-+};
-+
-+struct udp_conn_table {
-+    spinlock_t block;
-+    struct hlist_head bhead;
-+};
-+
-+#define D_UDP_CONN_SIZE 1024
-+extern struct udp_conn_table udp_conn_table[D_UDP_CONN_SIZE];
-+
-+// udp-epoll support - end
-+
- extern struct udp_table udp_table;
- extern void udp_table_init(struct udp_table *, const char *);
- static inline struct udp_hslot *udp_hashslot(struct udp_table *table,
-@@ -164,8 +183,11 @@
- extern void udp_lib_unhash(struct sock *sk);
- extern void udp_lib_rehash(struct sock *sk, u16 new_hash);
- 
-+void udp4_lib_del_sock_upi(struct sock *sk);
-+
- static inline void udp_lib_close(struct sock *sk, long timeout)
- {
-+    udp4_lib_del_sock_upi(sk);
- 	sk_common_release(sk);
- }
- 
 --- /usr/src/kernels/linux-3.0.4/net/ipv4/udp.c	2011-08-30 02:26:30.000000000 +0530
-+++ linux-3.0.4/net/ipv4/udp.c	2013-02-17 23:57:08.800165584 +0530
++++ linux-3.0.4/net/ipv4/udp.c	2013-02-19 22:26:30.622107991 +0530
 @@ -110,6 +110,10 @@
  struct udp_table udp_table __read_mostly;
  EXPORT_SYMBOL(udp_table);
@@ -70,7 +11,45 @@
  long sysctl_udp_mem[3] __read_mostly;
  EXPORT_SYMBOL(sysctl_udp_mem);
  
-@@ -1606,6 +1610,99 @@
+@@ -122,6 +126,7 @@
+ atomic_long_t udp_memory_allocated;
+ EXPORT_SYMBOL(udp_memory_allocated);
+ 
++struct sock *udp4_lib_lookup_upi(struct udp_peer_info *upi);
+ #define MAX_UDP_PORTS 65536
+ #define PORTS_PER_CHAIN (MAX_UDP_PORTS / UDP_HTABLE_SIZE_MIN)
+ 
+@@ -520,11 +525,24 @@
+ 	const struct iphdr *iph = ip_hdr(skb);
+ 
+ 	if (unlikely(sk = skb_steal_sock(skb)))
+-		return sk;
+-	else
+-		return __udp4_lib_lookup(dev_net(skb_dst(skb)->dev), iph->saddr, sport,
+-					 iph->daddr, dport, inet_iif(skb),
+-					 udptable);
++        return sk;
++    else {
++        struct udp_peer_info upi;
++        upi.sip = iph->daddr;
++        upi.dip = iph->saddr;
++        upi.sport = dport;
++        upi.dport = sport;
++        sk = udp4_lib_lookup_upi(&upi);
++
++        if (sk) {
++            return sk;
++        }
++        else {
++            return __udp4_lib_lookup(dev_net(skb_dst(skb)->dev), iph->saddr, sport,
++                    iph->daddr, dport, inet_iif(skb),
++                    udptable);
++        }
++    }
+ }
+ 
+ struct sock *udp4_lib_lookup(struct net *net, __be32 saddr, __be16 sport,
+@@ -1606,6 +1624,99 @@
  	return 0;
  }
  
@@ -170,7 +149,7 @@
  /*
   *	All we need to do is get the socket, and then do a checksum.
   */
-@@ -1736,10 +1833,86 @@
+@@ -1736,10 +1847,86 @@
  	if (optlen < sizeof(int))
  		return -EINVAL;
  
@@ -258,7 +237,7 @@
  	case UDP_CORK:
  		if (val != 0) {
  			up->corkflag = 1;
-@@ -2209,6 +2382,7 @@
+@@ -2209,6 +2396,7 @@
  
  void __init udp_init(void)
  {
@@ -266,7 +245,7 @@
  	unsigned long limit;
  
  	udp_table_init(&udp_table, "UDP");
-@@ -2220,6 +2394,17 @@
+@@ -2220,6 +2408,17 @@
  
  	sysctl_udp_rmem_min = SK_MEM_QUANTUM;
  	sysctl_udp_wmem_min = SK_MEM_QUANTUM;

@@ -1,0 +1,19 @@
+--- /usr/src/kernels/linux-3.0.4/include/linux/udp.h	2011-08-30 02:26:30.000000000 +0530
++++ linux-3.0.4/include/linux/udp.h	2013-02-17 11:01:02.238656034 +0530
+@@ -29,6 +29,16 @@
+ /* UDP socket options */
+ #define UDP_CORK	1	/* Never send partially complete segments */
+ #define UDP_ENCAP	100	/* Set the socket to accept encapsulated packets */
++// udp-epoll support - begin
++struct udp_peer_info {
++    __be32 sip;
++    __be32 dip;
++	__be16	sport;
++	__be16	dport;
++};
++#define UDP_ADD_PEER_INFO	500	/* Add new UDP socket to UDP connected table */
++#define UDP_DEL_PEER_INFO	501	/* Del UDP socket from UDP connected table */
++// udp-epoll support - end
+ 
+ /* UDP encapsulation types */
+ #define UDP_ENCAP_ESPINUDP_NON_IKE	1 /* draft-ietf-ipsec-nat-t-ike-00/01 */
