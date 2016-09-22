@@ -42,7 +42,7 @@ int main(int argc, char **argv)
         count = 0;
         while(count < cntr_hdr->hdr_cnt) {
             cntr_body = (mst_shm_body_t *)((char *)cntr_hdr + sizeof(mst_shm_hdr_t) + (count * sizeof(mst_shm_body_t)));
-            if (cntr_body->value) {
+            if (cntr_body->valid) {
                 if (!strcmp(cntr_body->cntr_name, "malloc_cnt")) {
                     mc = cntr_body->value;
                 }
