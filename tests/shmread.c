@@ -17,7 +17,6 @@ int main(int argc, char **argv)
     mst_shm_body_t *cntr_body;
     int count = 0;
     int size = D_MST_SHM_SIZE;
-    int cntr_index = 0;
     int mc = 0;
     int fc = 0;
 
